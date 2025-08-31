@@ -23,7 +23,7 @@ while True:
     
     ram = psutil.virtual_memory().percent
 
-    disco = psutil.disk_usage("C:\\").percent
+    disco = psutil.disk_usage("/").percent
 
     print(f"dia e hora: {timestamp}, Média Geral: {mediaGeralCpu}%, Média Lógica: {mediaLogica}%, ram: {ram}%, disco: {disco}¨%")
 
