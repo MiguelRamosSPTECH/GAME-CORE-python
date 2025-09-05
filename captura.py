@@ -1,3 +1,4 @@
+#baixar essa livraria pip install slack_sdk
 import pandas as pd
 import psutil
 import os
@@ -7,10 +8,9 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 
-client = WebClient(token="COLOQUE O TOKEN DO SLACK AQUI")
+client = WebClient(token="COLOQUE AQUI O TOKEN DO SLACK")
 
 while True:
-
 
     user = psutil.users()[0].name
 
