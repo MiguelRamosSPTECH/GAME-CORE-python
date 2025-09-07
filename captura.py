@@ -8,7 +8,7 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 
-client = WebClient(token="COLOQUE AQUI O TOKEN")
+client = WebClient(token="COLOQUE O TOKEN AQUI")
 
 while True:
 
@@ -61,7 +61,7 @@ while True:
 
         try:
             response = client.chat_postMessage(
-                channel="#suporte-jira",
+                channel="#suporte-slack",
                 text=alerta
             )
             print("Alerta enviado para o Slack.")
