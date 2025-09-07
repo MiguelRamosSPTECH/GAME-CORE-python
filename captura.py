@@ -8,7 +8,7 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 
-client = WebClient(token="COLOQUE AQUI O TOKEN DO SLACK")
+client = WebClient(token="COLOQUE AQUI O TOKEN")
 
 while True:
 
@@ -53,7 +53,7 @@ while True:
         alerta = (
             f"⚠️ *Alerta de uso elevado detectado!*\n"
             f"🕒 {timestamp}\n"
-            f"👤 Usuário: {user}\n"
+            f"👤 Servidor: RIOT-SERVER-1B \n"
             f"💻 CPU: {mediaGeralCpu}%\n"
             f"🧠 RAM: {ram}%\n"
             f"💾 Disco: {disco}%"
