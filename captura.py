@@ -7,7 +7,6 @@ import time
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
-
 client = WebClient(token="COLOQUE O TOKEN AQUI")
 
 while True:
@@ -31,7 +30,7 @@ while True:
 
     disco = psutil.disk_usage("/").percent
 
-    print(f"dia e hora: {timestamp}, Média Geral: {mediaGeralCpu}%, Média Lógica: {mediaLogica}%, ram: {ram}%, disco: {disco}¨%")
+    print(f"dia e hora: {timestamp}, Média Geral CPU: {mediaGeralCpu}%, Média Lógica CPU: {mediaLogica}%, ram: {ram}%, disco: {disco}¨%")
 
     dados = {
         "user": [user],
