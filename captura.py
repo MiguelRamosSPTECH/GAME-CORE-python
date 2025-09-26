@@ -4,10 +4,10 @@ import psutil
 import os
 from datetime import datetime
 import time
-from slack_sdk import WebClient
-from slack_sdk.errors import SlackApiError
+#from slack_sdk import WebClient
+#from slack_sdk.errors import SlackApiError
 
-client = WebClient(token="COLOQUE O TOKEN AQUI")
+#   client = WebClient(token="COLOQUE O TOKEN AQUI")
 
 while True:
 
@@ -18,6 +18,15 @@ while True:
     mediaGeralCpu = psutil.cpu_percent(interval=1, percpu=False)
 
     mediaLogicasCpu = psutil.cpu_percent(interval=1, percpu=True)
+
+    frequenciaCpu = psutil.cpu_freq()
+
+    freq_atual = round(frequenciaCpu.current / (1024 ** 2), 2)
+
+    swap = psutil.swap_memory()
+
+    swap_usado = round(swap.used / (1024 ** 2),2)
+
 
     soma = 0
 
@@ -30,14 +39,16 @@ while True:
 
     disco = psutil.disk_usage("/").percent
 
-    print(f"dia e hora: {timestamp}, Média Geral CPU: {mediaGeralCpu}%, Média Lógica CPU: {mediaLogica}%, ram: {ram}%, disco: {disco}¨%")
+    print(f"dia e hora: {timestamp}, Média Geral CPU: {mediaGeralCpu}%, Média Lógica CPU: {mediaLogica}%, frequencia_cpu: {frequenciaCpu}, ram: {ram}%, ram_swap: {swap}, disco: {disco}¨%")
 
     dados = {
         "user": [user],
         "timestamp": [timestamp],
         "cpu": [mediaGeralCpu],
         "logicas_cpu": [mediaLogica],
+        "frequencia_cpu": [freq_atual],
         "ram": [ram],
+        "ram_swap": [swap_usado],
         "disco": [disco]
     }
 
@@ -48,23 +59,23 @@ while True:
     df.to_csv("dados-capturados.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo))
 
     # Verifica se algum recurso passou de 80%
-    if mediaGeralCpu > 85 or ram > 85 or disco > 85:
-        alerta = (
-            f"⚠️ *Alerta de uso elevado detectado!*\n"
-            f"🕒 {timestamp}\n"
-            f"👤 Servidor: RIOT-SERVER-1B \n"
-            f"💻 CPU: {mediaGeralCpu}%\n"
-            f"🧠 RAM: {ram}%\n"
-            f"💾 Disco: {disco}%"
-        )
+   # if mediaGeralCpu > 85 or ram > 85 or disco > 85:
+    #    alerta = (
+     #       f"⚠️ *Alerta de uso elevado detectado!*\n"
+      #      f"🕒 {timestamp}\n"
+       #     f"👤 Servidor: RIOT-SERVER-1B \n"
+        #    f"💻 CPU: {mediaGeralCpu}%\n"
+         #   f"🧠 RAM: {ram}%\n"
+          #  f"💾 Disco: {disco}%"
+        #)
+#
+ #       try:
+  #          response = client.chat_postMessage(
+   #             channel="#suporte-slack",
+    #            text=alerta
+     #       )
+      #      print("Alerta enviado para o Slack.")
+       # except SlackApiError as e:
+        #    print("Erro ao enviar alerta:", e.response["error"])
 
-        try:
-            response = client.chat_postMessage(
-                channel="#suporte-slack",
-                text=alerta
-            )
-            print("Alerta enviado para o Slack.")
-        except SlackApiError as e:
-            print("Erro ao enviar alerta:", e.response["error"])
-
-    time.sleep(10)
+    time.sleep(2)
