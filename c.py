@@ -14,9 +14,6 @@ print("aaaaaaaa")
 
 print(internet.bytes_sent)
 
-
-
-
     dados = {
         "bytesRecebidos" : [internet.bytes_recv],
         "Porcentagem_de_erro_recebido" : [porcentagemErroRecebido]

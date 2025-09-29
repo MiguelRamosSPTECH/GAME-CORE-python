@@ -41,6 +41,11 @@ while True:
 
     nucleos_cpu = psutil.cpu_percent(percpu=True, interval=0.5)
 
+    internet =  psutil.net_io_counters(pernic=False, nowrap=True)
+
+    porcentagemErroRecebido = internet.errin * 100 / internet.packets_recv
+
+    porcentagemErroEnviado = internet.errout * 100 / internet.packets_sent
 
     def processo_jogo():
         for proc in psutil.process_iter(['pid','name','status']):
@@ -51,8 +56,9 @@ while True:
 
 
     processo_u_jogo = processo_jogo()
-    print(f"dia e hora: {timestamp}, Média Geral CPU: {mediaGeralCpu}%, Média Lógica CPU: {mediaLogica}%, frequencia_cpu: {frequenciaCpu}, ram: {ram}%, ram_swap: {swap}, disco: {disco}¨% |\n {nucleos_cpu} |\n {processo_u_jogo}")
+    # print(f"dia e hora: {timestamp}, Média Geral CPU: {mediaGeralCpu}%, Média Lógica CPU: {mediaLogica}%, frequencia_cpu: {frequenciaCpu}, ram: {ram}%, ram_swap: {swap}, disco: {disco}¨% |\n {nucleos_cpu} |\n {processo_u_jogo}")
     
+
 
     dados = {
         "user": [user],
@@ -76,6 +82,10 @@ while True:
         "uso_cpu_processo":[processo_u_jogo[3]],
         "uso_ram_processo":[processo_u_jogo[4]],
         "qtd_threads_processo":[processo_u_jogo[5]],
+        "bytesRecebidos" : [internet.bytes_recv],
+        "Porcentagem_de_erro_recebido" : [porcentagemErroRecebido],
+        "bytesEnviados" : [internet.bytes_sent],
+        "Porcentagem_de_erro_enviado" : [porcentagemErroEnviado]
     }
 
     df = pd.DataFrame(dados)
