@@ -21,7 +21,7 @@ while True:
 
     frequenciaCpu = psutil.cpu_freq()
 
-    freq_atual = round(frequenciaCpu.current / (1024 ** 2), 2)
+    freq_atual_ghz = round(frequenciaCpu.current / 1000,2)
 
     swap = psutil.swap_memory()
 
@@ -72,7 +72,7 @@ while True:
         "nucleo6":nucleos_cpu[5],
         "nucleo7":nucleos_cpu[6],
         "nucleo8":nucleos_cpu[7],
-        "frequencia_cpu": [freq_atual],
+        "frequencia_cpu_ghz": [freq_atual_ghz],
         "ram_uso": [ram],
         "ram_swap": [swap_usado],
         "disco": [disco],
