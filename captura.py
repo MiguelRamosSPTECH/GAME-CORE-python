@@ -39,24 +39,53 @@ while True:
 
     disco = psutil.disk_usage("/").percent
 
-    print(f"dia e hora: {timestamp}, Média Geral CPU: {mediaGeralCpu}%, Média Lógica CPU: {mediaLogica}%, frequencia_cpu: {frequenciaCpu}, ram: {ram}%, ram_swap: {swap}, disco: {disco}¨%")
+    nucleos_cpu = psutil.cpu_percent(percpu=True, interval=0.5)
+
+
+    def processo_jogo():
+        for proc in psutil.process_iter(['pid','name','status']):
+            if "Code.exe".lower() in proc.name().lower():
+                return [proc.pid, proc.name(), proc.status(), psutil.Process(proc.pid).cpu_percent(interval=1), 
+                        psutil.Process(proc.pid).memory_percent(), 
+                        psutil.Process(proc.pid).num_threads()]
+
+
+    processo_u_jogo = processo_jogo()
+    print(f"dia e hora: {timestamp}, Média Geral CPU: {mediaGeralCpu}%, Média Lógica CPU: {mediaLogica}%, frequencia_cpu: {frequenciaCpu}, ram: {ram}%, ram_swap: {swap}, disco: {disco}¨% |\n {nucleos_cpu} |\n {processo_u_jogo}")
+    
 
     dados = {
         "user": [user],
         "timestamp": [timestamp],
         "cpu": [mediaGeralCpu],
-        "logicas_cpu": [mediaLogica],
+        "nucleo1":nucleos_cpu[0],
+        "nucleo2":nucleos_cpu[1],
+        "nucleo3":nucleos_cpu[2],
+        "nucleo4":nucleos_cpu[3],
+        "nucleo5":nucleos_cpu[4],
+        "nucleo6":nucleos_cpu[5],
+        "nucleo7":nucleos_cpu[6],
+        "nucleo8":nucleos_cpu[7],
         "frequencia_cpu": [freq_atual],
-        "ram": [ram],
+        "ram_uso": [ram],
         "ram_swap": [swap_usado],
-        "disco": [disco]
+        "disco": [disco],
+        "pid_processo":[processo_u_jogo[0]],
+        "nome_processo":[processo_u_jogo[1]],
+        "status_processo":[processo_u_jogo[2]],
+        "uso_cpu_processo":[processo_u_jogo[3]],
+        "uso_ram_processo":[processo_u_jogo[4]],
+        "qtd_threads_processo":[processo_u_jogo[5]],
     }
 
     df = pd.DataFrame(dados)
     
     arquivo = "dados-capturados.csv"
 
-    df.to_csv("dados-capturados.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo))
+    df.to_csv("dados-capturados.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo), sep=";")
+
+    time.sleep(2)
+
 
     # Verifica se algum recurso passou de 80%
    # if mediaGeralCpu > 85 or ram > 85 or disco > 85:
@@ -77,5 +106,3 @@ while True:
       #      print("Alerta enviado para o Slack.")
        # except SlackApiError as e:
         #    print("Erro ao enviar alerta:", e.response["error"])
-
-    time.sleep(2)
