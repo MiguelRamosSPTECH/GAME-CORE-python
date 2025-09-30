@@ -72,6 +72,10 @@ while True:
 
 
 
+    qtd_processos =  len(psutil.pids ())
+
+
+
     dados = {
         "user": [user],
         "timestamp": [timestamp],
@@ -90,6 +94,7 @@ while True:
         "uso_cpu_processo":[processo_u_jogo[3]],
         "uso_ram_processo":[processo_u_jogo[4]],
         "qtd_threads_processo":[processo_u_jogo[5]],
+        "total_processos": [qtd_processos],
         "bytesRecebidos" : [internet.bytes_recv],
         "Porcentagem_de_erro_recebido" : [porcentagemErroRecebido],
         "bytesEnviados" : [internet.bytes_sent],
