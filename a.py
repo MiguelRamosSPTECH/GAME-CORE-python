@@ -47,29 +47,49 @@ while True:
 
     porcentagemErroEnviado = internet.errout * 100 / internet.packets_sent
 
-    def processo_jogo_cpu():
-        for proc in psutil.process_iter(['pid','name','status','cpu_percent','memory_percent']):
-            if proc.name() == "Code.exe":
-                return [proc.pid, proc.name(), proc.status(), psutil.Process(proc.pid).cpu_percent(interval=1), 
-                        psutil.Process(proc.pid).memory_percent(), 
-                        psutil.Process(proc.pid).num_threads()]
+    def processo_maior_cpu():
 
+        psutil.cpu_percent(interval=0) 
+        
+        # 2. Aguardamos um instante para que o sistema acumule dados de uso de CPU
+        time.sleep(0.1)
 
-    processo_u_jogo = processo_jogo_cpu()
+        maior_cpu_percent = -1.0
+        processo_maior_cpu = None
+
+        # 3. Iteramos sobre os processos e coletamos o uso de CPU
+        for proc in psutil.process_iter(['pid', 'name', 'status', 'memory_percent']):
+            try:
+                p = psutil.Process(proc.info['pid'])
+                
+                # Aqui, chamamos sem 'interval' para obter a taxa acumulada desde o 'reset'
+                cpu_uso_atual = p.cpu_percent()
+                
+                if cpu_uso_atual > maior_cpu_percent:
+                    maior_cpu_percent = cpu_uso_atual
+                    
+                    # Coleta todas as informações do processo vencedor
+                    processo_maior_cpu = [
+                        proc.info['pid'], 
+                        proc.info['name'], 
+                        proc.info['status'], 
+                        cpu_uso_atual, 
+                        proc.info['memory_percent'], # Usamos a leitura já disponível
+                        p.num_threads()
+                    ]
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+                
+        # Se nenhum processo foi encontrado (o que é improvável), retorna valores vazios
+        if processo_maior_cpu is None:
+            return [0, "N/A", "N/A", 0.0, 0.0, 0]
+            
+        return processo_maior_cpu
+
+    processo_u_jogo = processo_maior_cpu()
     # print(f"dia e hora: {timestamp}, Média Geral CPU: {mediaGeralCpu}%, Média Lógica CPU: {mediaLogica}%, frequencia_cpu: {frequenciaCpu}, ram: {ram}%, ram_swap: {swap}, disco: {disco}¨% |\n {nucleos_cpu} |\n {processo_u_jogo}")
     
-
-    # Ordenando a lista de nucleos
-    for i in range(0,len(nucleos_cpu),1):
-        maior = i
-        for j in range (i + 1, len(nucleos_cpu),1):
-            if(nucleos_cpu[j] > nucleos_cpu[maior]):
-                maior = j
-        
-        aux = nucleos_cpu[i]
-        nucleos_cpu[i] = nucleos_cpu[maior]
-        nucleos_cpu[maior] = aux
-
 
 
     dados = {
@@ -80,6 +100,10 @@ while True:
         "nucleo2":nucleos_cpu[1],
         "nucleo3":nucleos_cpu[2],
         "nucleo4":nucleos_cpu[3],
+        "nucleo5":nucleos_cpu[4],
+        "nucleo6":nucleos_cpu[5],
+        "nucleo7":nucleos_cpu[6],
+        "nucleo8":nucleos_cpu[7],
         "frequencia_cpu_ghz": [freq_atual_ghz],
         "ram_uso": [ram],
         "ram_swap": [swap_usado],

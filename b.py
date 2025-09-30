@@ -47,29 +47,45 @@ while True:
 
     porcentagemErroEnviado = internet.errout * 100 / internet.packets_sent
 
-    def processo_jogo_cpu():
-        for proc in psutil.process_iter(['pid','name','status','cpu_percent','memory_percent']):
-            if proc.name() == "Code.exe":
-                return [proc.pid, proc.name(), proc.status(), psutil.Process(proc.pid).cpu_percent(interval=1), 
-                        psutil.Process(proc.pid).memory_percent(), 
-                        psutil.Process(proc.pid).num_threads()]
+    def processo_maior_cpu():
+        # Inicializa variáveis para rastrear o processo com maior CPU
+        maior_cpu_percent = -1.0
+        processo_maior_cpu = None
+
+        # Itera sobre todos os processos
+        for proc in psutil.process_iter(['pid', 'name', 'status', 'cpu_percent', 'memory_percent']):
+            try:
+                # Tenta obter o uso atual de CPU para o processo
+                # Usar interval=0.1 evita o "primeiro" valor zerado e dá uma leitura mais instantânea
+                cpu_uso_atual = psutil.Process(proc.info['pid']).cpu_percent(interval=0.1)
+                
+                # Compara o uso de CPU atual com o maior encontrado até agora
+                if cpu_uso_atual > maior_cpu_percent:
+                    maior_cpu_percent = cpu_uso_atual
+                    
+                    # Coleta todas as informações necessárias se este for o novo maior
+                    processo_maior_cpu = [
+                        proc.info['pid'], 
+                        proc.info['name'], 
+                        proc.info['status'], 
+                        cpu_uso_atual, 
+                        psutil.Process(proc.info['pid']).memory_percent(), 
+                        psutil.Process(proc.info['pid']).num_threads()
+                    ]
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                # Lida com exceções que podem ocorrer (ex: processo termina, permissão negada)
+                continue
+                
+        # Retorna as informações do processo com maior uso de CPU.
+        # Se nenhum processo foi encontrado (improvável), retorna None ou uma lista vazia,
+        # mas o design atual garante que o processo do próprio script ou outro será o 'maior'.
+        return processo_maior_cpu
 
 
-    processo_u_jogo = processo_jogo_cpu()
+    processo_u_jogo = processo_maior_cpu()
     # print(f"dia e hora: {timestamp}, Média Geral CPU: {mediaGeralCpu}%, Média Lógica CPU: {mediaLogica}%, frequencia_cpu: {frequenciaCpu}, ram: {ram}%, ram_swap: {swap}, disco: {disco}¨% |\n {nucleos_cpu} |\n {processo_u_jogo}")
     
-
-    # Ordenando a lista de nucleos
-    for i in range(0,len(nucleos_cpu),1):
-        maior = i
-        for j in range (i + 1, len(nucleos_cpu),1):
-            if(nucleos_cpu[j] > nucleos_cpu[maior]):
-                maior = j
-        
-        aux = nucleos_cpu[i]
-        nucleos_cpu[i] = nucleos_cpu[maior]
-        nucleos_cpu[maior] = aux
-
 
 
     dados = {
@@ -80,6 +96,10 @@ while True:
         "nucleo2":nucleos_cpu[1],
         "nucleo3":nucleos_cpu[2],
         "nucleo4":nucleos_cpu[3],
+        "nucleo5":nucleos_cpu[4],
+        "nucleo6":nucleos_cpu[5],
+        "nucleo7":nucleos_cpu[6],
+        "nucleo8":nucleos_cpu[7],
         "frequencia_cpu_ghz": [freq_atual_ghz],
         "ram_uso": [ram],
         "ram_swap": [swap_usado],
