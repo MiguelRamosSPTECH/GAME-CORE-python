@@ -20,20 +20,12 @@ while True:
     mediaLogicasCpu = psutil.cpu_percent(interval=1, percpu=True)
 
     frequenciaCpu = psutil.cpu_freq()
-
+    print(frequenciaCpu)
     freq_atual_ghz = round(frequenciaCpu.current / 1000,2)
 
     swap = psutil.swap_memory()
 
     swap_usado = round(swap.used / (1024 ** 2),2)
-
-
-    soma = 0
-
-    for valorAtual in mediaLogicasCpu:
-        soma += valorAtual
-
-    mediaLogica = round(soma / len(mediaLogicasCpu), 2)
     
     ram = psutil.virtual_memory().percent
 
@@ -54,7 +46,7 @@ while True:
                         psutil.Process(proc.pid).memory_percent(), 
                         psutil.Process(proc.pid).num_threads()]
 
-
+    
     processo_u_jogo = processo_jogo()
     # print(f"dia e hora: {timestamp}, Média Geral CPU: {mediaGeralCpu}%, Média Lógica CPU: {mediaLogica}%, frequencia_cpu: {frequenciaCpu}, ram: {ram}%, ram_swap: {swap}, disco: {disco}¨% |\n {nucleos_cpu} |\n {processo_u_jogo}")
     
@@ -95,24 +87,3 @@ while True:
     df.to_csv("dados-capturados.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo), sep=";")
 
     time.sleep(2)
-
-
-    # Verifica se algum recurso passou de 80%
-   # if mediaGeralCpu > 85 or ram > 85 or disco > 85:
-    #    alerta = (
-     #       f"⚠️ *Alerta de uso elevado detectado!*\n"
-      #      f"🕒 {timestamp}\n"
-       #     f"👤 Servidor: RIOT-SERVER-1B \n"
-        #    f"💻 CPU: {mediaGeralCpu}%\n"
-         #   f"🧠 RAM: {ram}%\n"
-          #  f"💾 Disco: {disco}%"
-        #)
-#
- #       try:
-  #          response = client.chat_postMessage(
-   #             channel="#suporte-slack",
-    #            text=alerta
-     #       )
-      #      print("Alerta enviado para o Slack.")
-       # except SlackApiError as e:
-        #    print("Erro ao enviar alerta:", e.response["error"])
