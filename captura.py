@@ -39,17 +39,38 @@ while True:
 
     porcentagemErroEnviado = internet.errout * 100 / internet.packets_sent
 
-    def processo_jogo():
-        for proc in psutil.process_iter(['pid','name','status']):
-            if "Code.exe".lower() in proc.name().lower():
+    def processo_jogo_cpu():
+        for proc in psutil.process_iter(['pid','name','status','cpu_percent','memory_percent']):
+            if proc.name() == "Code.exe":
                 return [proc.pid, proc.name(), proc.status(), psutil.Process(proc.pid).cpu_percent(interval=1), 
                         psutil.Process(proc.pid).memory_percent(), 
                         psutil.Process(proc.pid).num_threads()]
 
+<<<<<<< HEAD
     
     processo_u_jogo = processo_jogo()
+=======
+
+    processo_u_jogo = processo_jogo_cpu()
+>>>>>>> 2f56f527af2caed7e7891a0b0d53bc0913747ef9
     # print(f"dia e hora: {timestamp}, Média Geral CPU: {mediaGeralCpu}%, Média Lógica CPU: {mediaLogica}%, frequencia_cpu: {frequenciaCpu}, ram: {ram}%, ram_swap: {swap}, disco: {disco}¨% |\n {nucleos_cpu} |\n {processo_u_jogo}")
     
+
+    # Ordenando a lista de nucleos
+    for i in range(0,len(nucleos_cpu),1):
+        maior = i
+        for j in range (i + 1, len(nucleos_cpu),1):
+            if(nucleos_cpu[j] > nucleos_cpu[maior]):
+                maior = j
+        
+        aux = nucleos_cpu[i]
+        nucleos_cpu[i] = nucleos_cpu[maior]
+        nucleos_cpu[maior] = aux
+
+
+
+    qtd_processos =  len(psutil.pids ())
+
 
 
     dados = {
@@ -60,10 +81,6 @@ while True:
         "nucleo2":nucleos_cpu[1],
         "nucleo3":nucleos_cpu[2],
         "nucleo4":nucleos_cpu[3],
-        "nucleo5":nucleos_cpu[4],
-        "nucleo6":nucleos_cpu[5],
-        "nucleo7":nucleos_cpu[6],
-        "nucleo8":nucleos_cpu[7],
         "frequencia_cpu_ghz": [freq_atual_ghz],
         "ram_uso": [ram],
         "ram_swap": [swap_usado],
@@ -74,6 +91,7 @@ while True:
         "uso_cpu_processo":[processo_u_jogo[3]],
         "uso_ram_processo":[processo_u_jogo[4]],
         "qtd_threads_processo":[processo_u_jogo[5]],
+        "total_processos": [qtd_processos],
         "bytesRecebidos" : [internet.bytes_recv],
         "Porcentagem_de_erro_recebido" : [porcentagemErroRecebido],
         "bytesEnviados" : [internet.bytes_sent],
