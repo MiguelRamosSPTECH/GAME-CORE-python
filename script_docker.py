@@ -1,11 +1,11 @@
 import docker
-import json
 import time
+import json
+import asyncio
 RAM_LIMITE = "512m"
 CPU_LIMITE = "1"
 
 client = docker.from_env() #conecta com docker (precisa estar iniciado)
-lista_containers = client.containers.list()
 
 def to_mb(x):
     return x / (1024*1024)
@@ -32,23 +32,37 @@ def cria_containers():
         identificacao_volume=identificacao_volume+1
 
 def exclui_container():
+    lista_containers = client.containers.list()
     if len(lista_containers) > 0:
         for c in lista_containers:
             container = client.containers.get(c.name)
             container.stop()
             container.remove()
             print(f"CONTAINER {c.name} EXCLUÍDO COM SUCESSO!")
-
-
+            
+# exclui_container()
+# cria_containers()
 
 # ----------- FOR PARA DADOS DE HARDWARE CONSUMIDOS DO CONTAINER -----------------
-# for container_criado in client.containers.list():
-#     cnc = client.containers.get(container_criado.name)
-#     for dados_c in cnc.stats(stream=True):
-#         stats_data = json.loads(dados_c.decode('utf-8'))
-#         # uso_total_cpu = to_mb(stats_data['cpu_stats']['cpu_usage']['total_usage'])
-#         print(stats_data)
-#         time.sleep(10)
+def dados_container(name):
+    qtdLoop = 0
+    container_monitora = client.containers.get(name)
+    container_monitora.exec_run(['rcon-cli', 'perf', 'start'])
+    time.sleep(10)
+    container_monitora.exec_run(['rcon-cli', 'perf', 'stop']) 
+    for dados_container in container_monitora.stats(stream=True): #retorna dados em bytes
+        dados_formata = json.loads(dados_container.decode('utf-8')) #le no formato br e transforma em json para poder acessar os dados
+        print(dados_formata)
+        qtdLoop+=1
+        time.sleep(1)
+        if qtdLoop == 2 : break 
+
+
+# dados_container('mc-server-1')
+# dados_container('mc-server-2')
+dados_container('mc-server-3')
+
+
 #-------------FOR PARA PROCESSOS-----------------
     # processos_container = cnc.top()
     # for processo in processos_container['Processes']:
