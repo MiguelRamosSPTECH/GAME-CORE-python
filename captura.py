@@ -6,6 +6,7 @@ import pandas as pd
 import psutil
 from datetime import datetime
 import time
+from getmac import get_mac_address as gma
 # import boto3
 # nome_bucket = "s3-raw-lab-12-10-2025-mrl"
 # s3_file_name = "dados_capturados.csv"
@@ -47,6 +48,7 @@ def captura_processos():
         icp2 = proc.io_counters()
         calcula_throughput = ((icp2.read_bytes - icp1.read_bytes) + (icp2.write_bytes - icp1.write_bytes)) / intervalo_monitoramento
         proc_throughput = [round(to_mb(calcula_throughput),2), round(to_gb(calcula_throughput),2)]
+        
         dados_processos_direto['timestamp'].append(timestamp)
         dados_processos_direto['pid'].append(pid_proc)
         dados_processos_direto['ppid'].append(ppid)
@@ -61,8 +63,10 @@ def captura_processos():
         dados_processos_direto['throughput_mbs'].append(proc_throughput[0])
         dados_processos_direto['throughput_gbs'].append(proc_throughput[1])
         df_proc = pd.DataFrame(dados_processos_direto)
+
+        top10_cpu = df_proc.sort_values(by="cpu_porcentagem", ascending=False).head(10)
         arquivo_proc = "dados_processos.csv"
-        df_proc.to_csv("dados_processos.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo_proc), sep=";")
+        top10_cpu.to_csv("dados_processos.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo_proc), sep=";")
 
 #PARTE DE MANIPULAÇÃO DOS CONTAINERS
 def cria_containers():
@@ -272,7 +276,7 @@ while True:
     # captura_processos()
 
     dados = {
-        "servidor": [user],
+        "servidor_mac": [gma()],
         "timestamp": [timestamp],
         "cpu_porcentagem": [cpu_uso[0]],
         "cpu_ociosa_porcentagem": [cpu_idle[0]],
@@ -310,4 +314,3 @@ while True:
     # except  Exception as e:
     #     print(f"Erro para fazer upload para o S3: {e}")
     time.sleep(5)
-
