@@ -23,7 +23,7 @@ from getmac import get_mac_address as gma
 RAM_LIMITE = "512m"
 CPU_LIMITE = "1"
 
-client = docker.from_env() #conecta com docker (precisa estar iniciado)
+# client = docker.from_env() #conecta com docker (precisa estar iniciado)
 
 
 def to_mb(x):
@@ -39,6 +39,8 @@ def captura_processos():
     global timestamp
     global dados_processos_direto
     for proc in psutil.process_iter():
+        proc.cpu_percent(interval=None)
+
         pid_proc = proc.pid
         nome_proc = proc.name()
         status_proc = proc.status()
@@ -48,7 +50,6 @@ def captura_processos():
         ppid = proc.ppid()
         tempo_execucao_proc = proc.create_time()
         icp1 = proc.io_counters()
-        time.sleep(intervalo_monitoramento)
         icp2 = proc.io_counters()
         calcula_throughput = ((icp2.read_bytes - icp1.read_bytes) + (icp2.write_bytes - icp1.write_bytes)) / intervalo_monitoramento
         proc_throughput = [round(to_mb(calcula_throughput),2), round(to_gb(calcula_throughput),2)]
@@ -74,12 +75,24 @@ def captura_processos():
     top10_ram = df_proc.sort_values(by="ram_porcentagem", ascending=False).head(50)
     top10_disco = df_proc.sort_values(by="throughput_mbs", ascending=False).head(50)
 
-    top10_geral = pd.merge(top10_cpu, top10_ram, top10_disco, on=["pid", "nome_processo"], how="inner")
+    top10_geral1 = pd.merge(top10_cpu, top10_ram, on=["pid", "nome_processo"], how="inner")
 
-  
+    top10_geral2 = pd.merge(top10_geral1, top10_disco, on=["pid", "nome_processo"], how="inner")
+
+
+
     arquivo_proc = "dados_processos.csv"
 
-    top10_geral.to_csv("dados_processos.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo_proc), sep=";")
+    top10_geral2.to_csv("dados_processos_gerais.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists("dados_processos_gerais.csv"), sep=";")
+
+
+
+
+    top10_cpu1 = df_proc.sort_values(by="cpu_porcentagem", ascending=False).head(10)
+
+
+    top10_cpu1.to_csv("dados_processos_cpu.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists("dados_processos_cpu.csv"), sep=";")
+
 
 #PARTE DE MANIPULAÇÃO DOS CONTAINERS
 def cria_containers():
@@ -153,49 +166,49 @@ def dados_container(name):
     #pega valor minimo entre tps_real e 20.0 (maximo) e dps arredonda para 2 (tendo os ticks por segundo)
     tps_container = round(min(1000000000 / (soma_ticktime / (len(saida_bytes.decode('utf-8').split('\n')) - 2)), 20.0),2)
 
-    for dados_container in container_monitora.stats(stream=True): #retorna dados em bytes
-        dados_formata = json.loads(dados_container.decode('utf-8')) #le no formato br e transforma em json para poder acessar os dados
-        soma_read_bytes = 0
-        soma_write_bytes = 0
-        for blkio in dados_formata['blkio_stats']['io_service_bytes_recursive']: 
-            if(blkio['op'].lower() == 'read'):
-                soma_read_bytes+=blkio['value']
-            elif(blkio['op'].lower() == 'write'):
-                soma_write_bytes+=blkio['value']
+    # for dados_container in container_monitora.stats(stream=True): #retorna dados em bytes
+    #     dados_formata = json.loads(dados_container.decode('utf-8')) #le no formato br e transforma em json para poder acessar os dados
+    #     soma_read_bytes = 0
+    #     soma_write_bytes = 0
+    #     for blkio in dados_formata['blkio_stats']['io_service_bytes_recursive']: 
+    #         if(blkio['op'].lower() == 'read'):
+    #             soma_read_bytes+=blkio['value']
+    #         elif(blkio['op'].lower() == 'write'):
+    #             soma_write_bytes+=blkio['value']
         
-        if dados_anteriores['read_bytes'] is None: 
-            dados_anteriores['total_usage'] = dados_formata['cpu_stats']['cpu_usage']['total_usage']
-            dados_anteriores['system_cpu_usage'] = dados_formata['cpu_stats']['system_cpu_usage']
-            dados_anteriores['online_cpus'] = dados_formata['cpu_stats'].get('online_cpus', dados_formata['cpu_stats']['cpu_usage'].get('percpu_usage', [0]))
+    #     if dados_anteriores['read_bytes'] is None: 
+    #         dados_anteriores['total_usage'] = dados_formata['cpu_stats']['cpu_usage']['total_usage']
+    #         dados_anteriores['system_cpu_usage'] = dados_formata['cpu_stats']['system_cpu_usage']
+    #         dados_anteriores['online_cpus'] = dados_formata['cpu_stats'].get('online_cpus', dados_formata['cpu_stats']['cpu_usage'].get('percpu_usage', [0]))
 
-            if isinstance(dados_anteriores['online_cpus'], list):
-                 dados_anteriores['online_cpus'] = len(dados_anteriores['online_cpus'])
-            if dados_anteriores['online_cpus'] == 0:
-                 dados_anteriores['online_cpus'] = 1
+    #         if isinstance(dados_anteriores['online_cpus'], list):
+    #              dados_anteriores['online_cpus'] = len(dados_anteriores['online_cpus'])
+    #         if dados_anteriores['online_cpus'] == 0:
+    #              dados_anteriores['online_cpus'] = 1
 
-            dados_anteriores['read_bytes'] = soma_read_bytes
-            dados_anteriores['write_bytes'] = soma_write_bytes
-        else:
+    #         dados_anteriores['read_bytes'] = soma_read_bytes
+    #         dados_anteriores['write_bytes'] = soma_write_bytes
+    #     else:
 
-            cpu_total_delta = dados_formata['cpu_stats']['cpu_usage']['total_usage'] - dados_anteriores['total_usage']
-            system_total_delta = dados_formata['cpu_stats']['system_cpu_usage'] - dados_anteriores['system_cpu_usage']
-            num_cpus = dados_anteriores['online_cpus']
+    #         cpu_total_delta = dados_formata['cpu_stats']['cpu_usage']['total_usage'] - dados_anteriores['total_usage']
+    #         system_total_delta = dados_formata['cpu_stats']['system_cpu_usage'] - dados_anteriores['system_cpu_usage']
+    #         num_cpus = dados_anteriores['online_cpus']
 
-            cpu_uso_docker = 0.0
-            if system_total_delta > 0:
-                cpu_uso_docker = round((cpu_total_delta / system_total_delta) * num_cpus * 100, 2)
+    #         cpu_uso_docker = 0.0
+    #         if system_total_delta > 0:
+    #             cpu_uso_docker = round((cpu_total_delta / system_total_delta) * num_cpus * 100, 2)
             
-            throughput_container = round(to_mb(((soma_read_bytes - dados_anteriores['read_bytes']) + (soma_write_bytes - dados_anteriores['write_bytes'])) / 0.5),2)
-            ram_uso = round(((dados_formata['memory_stats']['usage'] / dados_formata['memory_stats']['limit']) * 100),2)
-            throttled_time = (dados_formata['cpu_stats']['throttling_data']['throttled_time'] / 1000000000) / 60
-            return [cpu_uso_docker, throughput_container, ram_uso, throttled_time, tps_container]
+    #         throughput_container = round(to_mb(((soma_read_bytes - dados_anteriores['read_bytes']) + (soma_write_bytes - dados_anteriores['write_bytes'])) / 0.5),2)
+    #         ram_uso = round(((dados_formata['memory_stats']['usage'] / dados_formata['memory_stats']['limit']) * 100),2)
+    #         throttled_time = (dados_formata['cpu_stats']['throttling_data']['throttled_time'] / 1000000000) / 60
+    #         return [cpu_uso_docker, throughput_container, ram_uso, throttled_time, tps_container]
 
 
 
 intervalo_monitoramento = 0.5
 while True:
 
-    macadress = psutil.net_if_addrs()['Wi-Fi'][0].address
+   # macadress = psutil.net_if_addrs()['Wi-Fi'][0].address
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -261,15 +274,15 @@ while True:
         "tps_container":[]
     }
 
-    for i in range(1,4):
-        dcm = dados_container(f"mc-server-{i}")
-        df_container['identificacao_container'].append(f"mc-server-{i}")
-        df_container['timestamp'].append(timestamp)
-        df_container['cpu_container'].append(dcm[0])
-        df_container['throughput_container'].append(dcm[1])
-        df_container['ram_container'].append(dcm[2])
-        df_container['throttled_time_container'].append(dcm[3])
-        df_container['tps_container'].append(dcm[4])
+    # for i in range(1,4):
+    #     dcm = dados_container(f"mc-server-{i}")
+    #     df_container['identificacao_container'].append(f"mc-server-{i}")
+    #     df_container['timestamp'].append(timestamp)
+    #     df_container['cpu_container'].append(dcm[0])
+    #     df_container['throughput_container'].append(dcm[1])
+    #     df_container['ram_container'].append(dcm[2])
+    #     df_container['throttled_time_container'].append(dcm[3])
+    #     df_container['tps_container'].append(dcm[4])
 
     df_c = pd.DataFrame(df_container)
     arquivo_c = "dados_containers.csv"
@@ -285,14 +298,16 @@ while True:
         'status': [],
         'cpu_porcentagem': [],
         'ram_porcentagem': [],
+        'ram_mb': [],
+        'ram_gb': [],
         'total_threads': [],
         'tempo_execucao': [],
         'throughput_mbs': [],
+        'throughput_gbs': [],
     }
     captura_processos()
-
     dados = {
-        "macadress": [macadress],
+        "macadress": [gma()],
         "timestamp": [timestamp],
         "cpu_porcentagem": [cpu_uso[0]],
         "cpu_ociosa_porcentagem": [cpu_idle[0]],
