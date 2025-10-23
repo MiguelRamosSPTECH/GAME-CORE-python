@@ -33,7 +33,11 @@ def to_gb(x):
     return x / (1024**3)
 
 
+
+
 def captura_processos():
+    global timestamp
+    global dados_processos_direto
     for proc in psutil.process_iter():
         pid_proc = proc.pid
         nome_proc = proc.name()
@@ -62,11 +66,20 @@ def captura_processos():
         dados_processos_direto['tempo_execucao'].append(tempo_execucao_proc)
         dados_processos_direto['throughput_mbs'].append(proc_throughput[0])
         dados_processos_direto['throughput_gbs'].append(proc_throughput[1])
-        df_proc = pd.DataFrame(dados_processos_direto)
+        
+        
+    
+    df_proc = pd.DataFrame(dados_processos_direto)
+    top10_cpu = df_proc.sort_values(by="cpu_porcentagem", ascending=False).head(50)
+    top10_ram = df_proc.sort_values(by="ram_porcentagem", ascending=False).head(50)
+    top10_disco = df_proc.sort_values(by="throughput_mbs", ascending=False).head(50)
 
-        top10_cpu = df_proc.sort_values(by="cpu_porcentagem", ascending=False).head(10)
-        arquivo_proc = "dados_processos.csv"
-        top10_cpu.to_csv("dados_processos.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo_proc), sep=";")
+    top10_geral = pd.merge(top10_cpu, top10_ram, top10_disco, on=["pid", "nome_processo"], how="inner")
+
+  
+    arquivo_proc = "dados_processos.csv"
+
+    top10_geral.to_csv("dados_processos.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo_proc), sep=";")
 
 #PARTE DE MANIPULAÇÃO DOS CONTAINERS
 def cria_containers():
@@ -276,7 +289,7 @@ while True:
         'tempo_execucao': [],
         'throughput_mbs': [],
     }
-    # captura_processos()
+    captura_processos()
 
     dados = {
         "macadress": [macadress],
