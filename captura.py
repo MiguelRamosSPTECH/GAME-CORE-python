@@ -178,7 +178,7 @@ def dados_container(name):
 intervalo_monitoramento = 0.5
 while True:
 
-    user = psutil.users()[0].name
+    macadress = psutil.net_if_addrs()['Wi-Fi'][0].address
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -227,6 +227,12 @@ while True:
     disco_uso = [disco_uso_geral.percent, round(to_mb(disco_uso_geral.used),2), round(to_gb(disco_uso_geral.used),2)]
     disco_livre = [round((disco_uso_geral.free/disco_uso_geral.total) * 100,2), round(to_mb(disco_uso_geral.free),2), round(to_gb(disco_uso_geral.free),2)]
     disco_throughput = [round(to_mb(calcula_throughput),2), round(to_gb(calcula_throughput),2)]
+
+    #REDE
+
+    rede_io_counters = psutil.net_io_counters()
+    bytes_enviados = to_mb(rede_io_counters.bytes_sent)
+    bytes_recebidos = to_mb(rede_io_counters.bytes_recv)
     #----------------------------------------------------------------------------------------
     df_container = {
         "identificacao_container":[],
@@ -262,17 +268,14 @@ while True:
         'status': [],
         'cpu_porcentagem': [],
         'ram_porcentagem': [],
-        'ram_mb': [],
-        'ram_gb': [],
         'total_threads': [],
         'tempo_execucao': [],
         'throughput_mbs': [],
-        'throughput_gbs': []
     }
     # captura_processos()
 
     dados = {
-        "servidor": [user],
+        "macadress": [macadress],
         "timestamp": [timestamp],
         "cpu_porcentagem": [cpu_uso[0]],
         "cpu_ociosa_porcentagem": [cpu_idle[0]],
@@ -296,6 +299,8 @@ while True:
         "disco_livre_gb":[disco_livre[2]],
         "disco_throughput_mbs":[disco_throughput[0]],
         "disco_throughput_gbs":[disco_throughput[1]],
+        "mb_enviados":[bytes_enviados],
+        "mb_recebidos":[bytes_recebidos]
     }
         
 
