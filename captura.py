@@ -274,15 +274,15 @@ while True:
         "tps_container":[]
     }
 
-    # for i in range(1,4):
-    #     dcm = dados_container(f"mc-server-{i}")
-    #     df_container['identificacao_container'].append(f"mc-server-{i}")
-    #     df_container['timestamp'].append(timestamp)
-    #     df_container['cpu_container'].append(dcm[0])
-    #     df_container['throughput_container'].append(dcm[1])
-    #     df_container['ram_container'].append(dcm[2])
-    #     df_container['throttled_time_container'].append(dcm[3])
-    #     df_container['tps_container'].append(dcm[4])
+    for i in range(1,4):
+        dcm = dados_container(f"mc-server-{i}")
+        df_container['identificacao_container'].append(f"mc-server-{i}")
+        df_container['timestamp'].append(timestamp)
+        df_container['cpu_container'].append(dcm[0])
+        df_container['throughput_container'].append(dcm[1])
+        df_container['ram_container'].append(dcm[2])
+        df_container['throttled_time_container'].append(dcm[3])
+        df_container['tps_container'].append(dcm[4])
 
     df_c = pd.DataFrame(df_container)
     arquivo_c = "dados_containers.csv"
