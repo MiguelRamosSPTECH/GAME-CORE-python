@@ -6,7 +6,6 @@ import pandas as pd
 import psutil
 from datetime import datetime
 import time
-from getmac import get_mac_address as gma
 # import boto3
 # nome_bucket = "s3-raw-lab-12-10-2025-mrl"
 # s3_file_name = "dados_capturados.csv"
@@ -34,6 +33,7 @@ def to_gb(x):
 
 
 def captura_processos():
+    limite_rodada = 0
     for proc in psutil.process_iter():
         pid_proc = proc.pid
         nome_proc = proc.name()
@@ -56,17 +56,16 @@ def captura_processos():
         dados_processos_direto['status'].append(status_proc)
         dados_processos_direto['cpu_porcentagem'].append(cpu_uso_proc)
         dados_processos_direto['ram_porcentagem'].append(ram_uso_proc[0])
-        dados_processos_direto['ram_mb'].append(round(to_mb(ram_uso_proc[1]), 2))
-        dados_processos_direto['ram_gb'].append(round(to_gb(ram_uso_proc[2]), 2))
         dados_processos_direto['total_threads'].append(total_threads)
         dados_processos_direto['tempo_execucao'].append(tempo_execucao_proc)
         dados_processos_direto['throughput_mbs'].append(proc_throughput[0])
-        dados_processos_direto['throughput_gbs'].append(proc_throughput[1])
         df_proc = pd.DataFrame(dados_processos_direto)
 
         top10_cpu = df_proc.sort_values(by="cpu_porcentagem", ascending=False).head(10)
         arquivo_proc = "dados_processos.csv"
         top10_cpu.to_csv("dados_processos.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo_proc), sep=";")
+        limite_rodada+=1
+
 
 #PARTE DE MANIPULAÇÃO DOS CONTAINERS
 def cria_containers():
@@ -180,6 +179,7 @@ def dados_container(name):
 
 
 intervalo_monitoramento = 0.5
+
 while True:
 
     macadress = psutil.net_if_addrs()['Wi-Fi'][0].address
@@ -248,19 +248,19 @@ while True:
         "tps_container":[]
     }
 
-    for i in range(1,4):
-        dcm = dados_container(f"mc-server-{i}")
-        df_container['identificacao_container'].append(f"mc-server-{i}")
-        df_container['timestamp'].append(timestamp)
-        df_container['cpu_container'].append(dcm[0])
-        df_container['throughput_container'].append(dcm[1])
-        df_container['ram_container'].append(dcm[2])
-        df_container['throttled_time_container'].append(dcm[3])
-        df_container['tps_container'].append(dcm[4])
+    # for i in range(1,4):
+    #     dcm = dados_container(f"mc-server-{i}")
+    #     df_container['identificacao_container'].append(f"mc-server-{i}")
+    #     df_container['timestamp'].append(timestamp)
+    #     df_container['cpu_container'].append(dcm[0])
+    #     df_container['throughput_container'].append(dcm[1])
+    #     df_container['ram_container'].append(dcm[2])
+    #     df_container['throttled_time_container'].append(dcm[3])
+    #     df_container['tps_container'].append(dcm[4])
 
-    df_c = pd.DataFrame(df_container)
-    arquivo_c = "dados_containers.csv"
-    df_c.to_csv("dados_containers.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo_c), sep=";")
+    # df_c = pd.DataFrame(df_container)
+    # arquivo_c = "dados_containers.csv"
+    # df_c.to_csv("dados_containers.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo_c), sep=";")
 
 
     #PROCESSOS
@@ -303,8 +303,8 @@ while True:
         "disco_livre_gb":[disco_livre[2]],
         "disco_throughput_mbs":[disco_throughput[0]],
         "disco_throughput_gbs":[disco_throughput[1]],
-        "mb_enviados":[bytes_enviados],
-        "mb_recebidos":[bytes_recebidos]
+        "rede_enviados_mb_":[bytes_enviados],
+        "rede_recebidos_mb":[bytes_recebidos]
     }
         
 
