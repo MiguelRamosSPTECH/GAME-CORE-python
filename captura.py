@@ -1,4 +1,3 @@
-#baixar essa livraria pip install slack_sdk
 import docker
 import os
 import json
@@ -6,24 +5,20 @@ import pandas as pd
 import psutil
 from datetime import datetime
 import time
-# import boto3
-# nome_bucket = "s3-raw-lab-12-10-2025-mrl"
-# s3_file_name = "dados_capturados.csv"
-# regiao_bucket = "us-east-1"
+import boto3
+#-----------------------------------------------------------
+#AREA CONEXAO COM BUCKETS AWS
+nome_bucket = "bucket-raw-gamecore"
+s3_file_name = ""
+regiao_bucket = "us-east-1"
 
 #iniciar ambiente s3
-# s3_client = boto3.client('s3', region_name=regiao_bucket)
-
-#AREA SLACK
-#from slack_sdk import WebClient
-#from slack_sdk.errors import SlackApiError
-#   client = WebClient(token="COLOQUE O TOKEN AQUI")
-
+s3_client = boto3.client('s3', region_name=regiao_bucket)
+#------------------------------------------------------------
 RAM_LIMITE = "512m"
 CPU_LIMITE = "1"
 
 client = docker.from_env() #conecta com docker (precisa estar iniciado)
-
 
 def to_mb(x):
     return x / (1024**2)
@@ -32,9 +27,13 @@ def to_gb(x):
     return x / (1024**3)
 
 
+
+
 def captura_processos():
-    limite_rodada = 0
+    global dados_processos_direto
     for proc in psutil.process_iter():
+        proc.cpu_percent(interval=None)
+
         pid_proc = proc.pid
         nome_proc = proc.name()
         status_proc = proc.status()
@@ -44,7 +43,6 @@ def captura_processos():
         ppid = proc.ppid()
         tempo_execucao_proc = proc.create_time()
         icp1 = proc.io_counters()
-        time.sleep(intervalo_monitoramento)
         icp2 = proc.io_counters()
         calcula_throughput = ((icp2.read_bytes - icp1.read_bytes) + (icp2.write_bytes - icp1.write_bytes)) / intervalo_monitoramento
         proc_throughput = [round(to_mb(calcula_throughput),2), round(to_gb(calcula_throughput),2)]
@@ -59,12 +57,32 @@ def captura_processos():
         dados_processos_direto['total_threads'].append(total_threads)
         dados_processos_direto['tempo_execucao'].append(tempo_execucao_proc)
         dados_processos_direto['throughput_mbs'].append(proc_throughput[0])
-        df_proc = pd.DataFrame(dados_processos_direto)
+        dados_processos_direto['throughput_gbs'].append(proc_throughput[1])
+        
+        
+    
+    df_proc = pd.DataFrame(dados_processos_direto)
+    top10_cpu = df_proc.sort_values(by="cpu_porcentagem", ascending=False).head(50)
+    top10_ram = df_proc.sort_values(by="ram_porcentagem", ascending=False).head(50)
+    top10_disco = df_proc.sort_values(by="throughput_mbs", ascending=False).head(50)
 
-        top10_cpu = df_proc.sort_values(by="cpu_porcentagem", ascending=False).head(10)
-        arquivo_proc = "dados_processos.csv"
-        top10_cpu.to_csv("dados_processos.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo_proc), sep=";")
-        limite_rodada+=1
+    top10_geral1 = pd.merge(top10_cpu, top10_ram, on=["pid", "nome_processo"], how="inner")
+
+    top10_geral2 = pd.merge(top10_geral1, top10_disco, on=["pid", "nome_processo"], how="inner")
+
+
+
+    arquivo_proc = "dados_processos.csv"
+
+    top10_geral2.to_csv("dados_processos_gerais.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists("dados_processos_gerais.csv"), sep=";")
+
+
+
+
+    top10_cpu1 = df_proc.sort_values(by="cpu_porcentagem", ascending=False).head(10)
+
+
+    top10_cpu1.to_csv("dados_processos_cpu.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists("dados_processos_cpu.csv"), sep=";")
 
 
 #PARTE DE MANIPULAÇÃO DOS CONTAINERS
@@ -104,8 +122,7 @@ dados_anteriores = {
     'read_bytes': None,
     'write_bytes': None,
     'total_usage': None,
-    'system_cpu_usage': None,
-    'online_cpus': None,
+    'system_cpu_usage': None
 }
 
 def dados_container(name):
@@ -114,11 +131,10 @@ def dados_container(name):
     dados_anteriores['write_bytes'] = None
     dados_anteriores['total_usage'] = None
     dados_anteriores['system_cpu_usage'] = None
-    dados_anteriores['online_cpus'] = None
 
     container_monitora = client.containers.get(name)
     container_monitora.exec_run(['mkdir','-p','/arquivos_descompactados/']) #cria diretório para gravar o arquivo descompactado
-
+    
     container_monitora.exec_run(['rcon-cli', 'perf', 'start']) #gerar dados de desempenho do servidor
     time.sleep(0.5)
     container_monitora.exec_run(['rcon-cli', 'perf', 'stop'])
@@ -127,7 +143,7 @@ def dados_container(name):
     exit_code, output_bytes = container_monitora.exec_run(['ls','-t', '/data/debug/profiling'])
     arq_zip = output_bytes.decode('utf-8').split('\n')[0]
     conteudo_arq_zip = os.path.join('/data/debug/profiling/', arq_zip) #garantir o caminho absoluto correto
-
+    
     container_monitora.exec_run(['unzip','-o',conteudo_arq_zip, '-d', '/arquivos_descompactados/']) #descompacta
     codigo_saida, saida_bytes = container_monitora.exec_run(['cat','/arquivos_descompactados/server/metrics/ticking.csv'])
     soma_ticktime = 0.0
@@ -152,26 +168,19 @@ def dados_container(name):
         if dados_anteriores['read_bytes'] is None: 
             dados_anteriores['total_usage'] = dados_formata['cpu_stats']['cpu_usage']['total_usage']
             dados_anteriores['system_cpu_usage'] = dados_formata['cpu_stats']['system_cpu_usage']
-            dados_anteriores['online_cpus'] = dados_formata['cpu_stats'].get('online_cpus', dados_formata['cpu_stats']['cpu_usage'].get('percpu_usage', [0]))
-
-            if isinstance(dados_anteriores['online_cpus'], list):
-                 dados_anteriores['online_cpus'] = len(dados_anteriores['online_cpus'])
-            if dados_anteriores['online_cpus'] == 0:
-                 dados_anteriores['online_cpus'] = 1
-
+            
             dados_anteriores['read_bytes'] = soma_read_bytes
             dados_anteriores['write_bytes'] = soma_write_bytes
         else:
 
             cpu_total_delta = dados_formata['cpu_stats']['cpu_usage']['total_usage'] - dados_anteriores['total_usage']
             system_total_delta = dados_formata['cpu_stats']['system_cpu_usage'] - dados_anteriores['system_cpu_usage']
-            num_cpus = dados_anteriores['online_cpus']
 
             cpu_uso_docker = 0.0
             if system_total_delta > 0:
-                cpu_uso_docker = round((cpu_total_delta / system_total_delta) * num_cpus * 100, 2)
+                cpu_uso_docker = round((cpu_total_delta / system_total_delta) * 1 * 100, 2)
             
-            throughput_container = round(to_mb(((soma_read_bytes - dados_anteriores['read_bytes']) + (soma_write_bytes - dados_anteriores['write_bytes'])) / 0.5),2)
+            throughput_container = round(to_mb(((soma_read_bytes - dados_anteriores['read_bytes']) + (soma_write_bytes - dados_anteriores['write_bytes'])) / intervalo_monitoramento),2)
             ram_uso = round(((dados_formata['memory_stats']['usage'] / dados_formata['memory_stats']['limit']) * 100),2)
             throttled_time = (dados_formata['cpu_stats']['throttling_data']['throttled_time'] / 1000000000) / 60
             return [cpu_uso_docker, throughput_container, ram_uso, throttled_time, tps_container]
@@ -248,19 +257,19 @@ while True:
         "tps_container":[]
     }
 
-    # for i in range(1,4):
-    #     dcm = dados_container(f"mc-server-{i}")
-    #     df_container['identificacao_container'].append(f"mc-server-{i}")
-    #     df_container['timestamp'].append(timestamp)
-    #     df_container['cpu_container'].append(dcm[0])
-    #     df_container['throughput_container'].append(dcm[1])
-    #     df_container['ram_container'].append(dcm[2])
-    #     df_container['throttled_time_container'].append(dcm[3])
-    #     df_container['tps_container'].append(dcm[4])
+    for i in range(1,4):
+        dcm = dados_container(f"mc-server-{i}")
+        df_container['identificacao_container'].append(f"mc-server-{i}")
+        df_container['timestamp'].append(timestamp)
+        df_container['cpu_container'].append(dcm[0])
+        df_container['throughput_container'].append(dcm[1])
+        df_container['ram_container'].append(dcm[2])
+        df_container['throttled_time_container'].append(dcm[3])
+        df_container['tps_container'].append(dcm[4])
 
-    # df_c = pd.DataFrame(df_container)
-    # arquivo_c = "dados_containers.csv"
-    # df_c.to_csv("dados_containers.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo_c), sep=";")
+    df_c = pd.DataFrame(df_container)
+    arquivo_c = "dados_containers.csv"
+    df_c.to_csv("dados_containers.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo_c), sep=";")
 
 
     #PROCESSOS
@@ -275,9 +284,9 @@ while True:
         'total_threads': [],
         'tempo_execucao': [],
         'throughput_mbs': [],
+        'throughput_gbs': [],
     }
-    # captura_processos()
-
+    captura_processos()
     dados = {
         "macadress": [macadress],
         "timestamp": [timestamp],
