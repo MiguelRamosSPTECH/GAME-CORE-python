@@ -1,4 +1,5 @@
 import docker
+from docker.errors import NotFound
 import os
 import json
 import pandas as pd
@@ -6,10 +7,10 @@ import psutil
 from datetime import datetime
 import time
 import boto3
+import glob
 #-----------------------------------------------------------
 #AREA CONEXAO COM BUCKETS AWS
 nome_bucket = "bucket-raw-gamecore"
-s3_file_name = ""
 regiao_bucket = "us-east-1"
 
 #iniciar ambiente s3
@@ -74,7 +75,7 @@ def captura_processos():
 
     arquivo_proc = "dados_processos.csv"
 
-    top10_geral2.to_csv("dados_processos_gerais.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists("dados_processos_gerais.csv"), sep=";")
+    top10_geral2.to_csv(arquivo_proc, encoding="utf-8", index=False, mode="a", header=not os.path.exists(f"{arquivo_proc}"), sep=";")
 
 
 
@@ -86,39 +87,54 @@ def captura_processos():
 
 
 #PARTE DE MANIPULAÇÃO DOS CONTAINERS
-def cria_containers():
+def gerencia_containers(acao):
+    lista_containers = client.containers.list()
     porta_container = 25565
     identificacao_container = 1
     identificacao_volume = 1
 
     for loop in range(0,3):
-        client.containers.run(
-            "itzg/minecraft-server", #imagem
-            name=f"mc-server-{identificacao_container}",
-            detach=True, #-d
-            ports = {f'25565/tcp' : porta_container},
-            environment=['EULA=TRUE'],
-            mem_limit=RAM_LIMITE,
-            cpuset_cpus=CPU_LIMITE,
-            volumes={f'mc-data-{identificacao_container}': {'bind':'/data','mode':'rw'}} #colocar na pasta data tudo do mundo e posso escrever e ler dados
-        )
-        print(f"CONTAINER {loop+1} CRIADO COM SUCESSO!")
-        identificacao_container= identificacao_container+1
-        porta_container=porta_container+1
-        identificacao_volume=identificacao_volume+1
+        container = None
+        volume = None
+        if acao == "excluir" :
+            #tenta localizar container
+            try:
+                container = client.containers.get(f"mc-server-{identificacao_container}")
+                container.stop()
+                container.remove()
+                print(f"✅ Container 'mc-server-{identificacao_container}' removido com sucesso!")  
+            except NotFound:
+                print(f"Erro: o container 'mc-server-{identificacao_container}' não foi encontrado!")
+                continue
 
-def exclui_container():
-    lista_containers = client.containers.list()
-    if len(lista_containers) < 3:
-        for c in lista_containers:
-            container = client.containers.get(c.name)
-            container.stop()
-            container.remove()
-            print(f"CONTAINER {c.name} EXCLUÍDO COM SUCESSO!")
+            #tenta localizar volume 
+            try:
+                volume = client.volumes.get(f"mc-data-{identificacao_container}")
+                volume.remove(force=True)
+                print(f"✅ Volume 'mc-data-{identificacao_container}' removido com sucesso!")
+            except NotFound:
+                print(f"Erro: O volume 'mc-data-{identificacao_container}' não foi encontrado.")
+                continue
+        elif acao == "criar" and len(lista_containers) < 3:            
+            client.containers.run(
+                "itzg/minecraft-server", #imagem
+                name=f"mc-server-{identificacao_container}",
+                detach=True, #-d
+                ports = {f'25565/tcp' : porta_container},
+                environment=['EULA=TRUE', 'TZ=America/Sao_Paulo', 'FORCE_IPV4=true'],
+                mem_limit=RAM_LIMITE,
+                cpuset_cpus=CPU_LIMITE,
+                volumes={f'mc-data-{identificacao_container}': {'bind':'/data','mode':'rw'}} #colocar na pasta data tudo do mundo e posso escrever e ler dados
+            )
+            print(f"CONTAINER {loop+1} CRIADO COM SUCESSO!")
+            identificacao_container= identificacao_container+1
+            porta_container=porta_container+1
+            identificacao_volume=identificacao_volume+1
+
 
 
 #PARTE DE CAPTURAR OS DADOS DO CONTAINER
-dados_anteriores = {
+dados_anteriores = {    
     'read_bytes': None,
     'write_bytes': None,
     'total_usage': None,
@@ -133,11 +149,16 @@ def dados_container(name):
     dados_anteriores['system_cpu_usage'] = None
 
     container_monitora = client.containers.get(name)
+
+
     container_monitora.exec_run(['mkdir','-p','/arquivos_descompactados/']) #cria diretório para gravar o arquivo descompactado
     
-    container_monitora.exec_run(['rcon-cli', 'perf', 'start']) #gerar dados de desempenho do servidor
+    #exec_run só executa comando no CMD, sem forçar o shell do container, por isso tava dando b.o
+    #/sh -> mais leve que o /bash, é para comandos mais simples e diretos.
+    #sem -c ele acha que é um arquivo ou caminho de arquivo para tentar executar
+    container_monitora.exec_run(['rcon-cli', 'perf start']) #gerar dados de desempenho do servidor
     time.sleep(0.5)
-    container_monitora.exec_run(['rcon-cli', 'perf', 'stop'])
+    container_monitora.exec_run(['rcon-cli', 'perf stop'])
     time.sleep(0.25) #esperar pra realmente pegar o ultimo arquivo
 
     exit_code, output_bytes = container_monitora.exec_run(['ls','-t', '/data/debug/profiling'])
@@ -147,6 +168,7 @@ def dados_container(name):
     container_monitora.exec_run(['unzip','-o',conteudo_arq_zip, '-d', '/arquivos_descompactados/']) #descompacta
     codigo_saida, saida_bytes = container_monitora.exec_run(['cat','/arquivos_descompactados/server/metrics/ticking.csv'])
     soma_ticktime = 0.0
+    
     for linha in saida_bytes.decode('utf-8').split('\n')[1:]:
         if len(linha) > 0:
             tick = float(linha.split(',')[1])
@@ -188,12 +210,29 @@ def dados_container(name):
 
 
 intervalo_monitoramento = 0.5
+# gerencia_containers("excluir")
+# gerencia_containers("criar")
+while True: 
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp_arquivos = timestamp.split(" ")[1][0:len(timestamp.split(" ")[1])-3]
 
-while True:
+    # LIMPAR CSV PARA NOVO DIA
+    dia_antes = None
+    caminho_busca = os.path.join("/", "*.csv") #caminho absoluto de qualquer arquivo que termine com .csv
+    arquivos_csv = glob.glob(caminho_busca) #pega e transforma em uma lista 
+
+    if (dia_antes != None) and (timestamp.split(" ")[0] != dia_antes):
+        for arquivo in arquivos_csv:
+            try:
+                with open(arquivo, "w", encoding="utf-8") as f:
+                    pass
+            except IOError as e:
+                print(f"Erro ao limpar o(s) arquivo(s): {e}")
+            print("Processo de limpeza de arquivos CSV concluído.")
+
 
     macadress = psutil.net_if_addrs()['Wi-Fi'][0].address
-
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     #---------------------------------------------------------------------------------------
     #USO DA CPU DE FORMA GERAL (% e em segundos)
@@ -202,9 +241,6 @@ while True:
 
     #USO DA CPU DE FORMA DETALHADA (% e em segundos)
     cpu_idle = [cpu_porcentagem_geral.idle, round((cpu_porcentagem_geral.idle / 100) * intervalo_monitoramento,2)]
-
-    #DESCOMENTAR QUANDO FOR LINUX
-    # cpu_iowait = [cpu_porcentagem_geral.iowait, (cpu_porcentagem_geral.iowait / 100) * intervalo_monitoramento]
 
     cpu_user = [cpu_porcentagem_geral.user, round((cpu_porcentagem_geral.user / 100) * intervalo_monitoramento,2)]
 
@@ -225,8 +261,6 @@ while True:
 
     ram_swap = [ round(ram_swap_geral.percent,2), round(to_mb(ram_swap_geral.used),2), round(to_gb(ram_swap_geral.used),2)  ]
     
-    #DESCOMENTAR QUANDO FOR LINUX
-    # ram_cached = [ round((ram_uso_geral.cached / ram_uso_geral.total) * 100), round(to_mb(ram_uso_geral.cached),2), round(to_gb(ram_uso_geral.cached),2)]
     #---------------------------------------------------------------------------------------
 
     #DISCO
@@ -267,11 +301,6 @@ while True:
         df_container['throttled_time_container'].append(dcm[3])
         df_container['tps_container'].append(dcm[4])
 
-    df_c = pd.DataFrame(df_container)
-    arquivo_c = "dados_containers.csv"
-    df_c.to_csv("dados_containers.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo_c), sep=";")
-
-
     #PROCESSOS
     dados_processos_direto = {
         'timestamp': [],
@@ -284,7 +313,7 @@ while True:
         'total_threads': [],
         'tempo_execucao': [],
         'throughput_mbs': [],
-        'throughput_gbs': [],
+        'throughput_gbs': []
     }
     captura_processos()
     dados = {
@@ -315,16 +344,23 @@ while True:
         "rede_enviados_mb_":[bytes_enviados],
         "rede_recebidos_mb":[bytes_recebidos]
     }
-        
+    #CONTAINER
+    df_c = pd.DataFrame(df_container)
+    arquivo_c = "dados_containers.csv"
+    df_c.to_csv(arquivo_c, encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo_c), sep=";")
 
+    #SERVIDOR
     df = pd.DataFrame(dados)
-    
     arquivo = "dados_capturados.csv"
-
-    df.to_csv("dados_capturados.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo), sep=";")
-    # try:
-    #     s3_client.upload_file("dados_capturados.csv", nome_bucket, s3_file_name)
-    #     print("UPLOAD NO S3 BEM SUCEDIDO")
-    # except  Exception as e:
-    #     print(f"Erro para fazer upload para o S3: {e}")
+    df.to_csv(arquivo, encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo), sep=";")
+    try:
+        data_formatada = timestamp.replace(" ", "-")
+        s3_client.upload_file(arquivo, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo}")
+        s3_client.upload_file(arquivo_c, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo_c}")
+        s3_client.upload_file("dados_processos_cpu.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos_cpu.csv")
+        s3_client.upload_file("dados_processos.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos.csv")
+        print(f"✅ [{data_formatada}] - UPLOAD DOS CSV'S no BUCKET RAW bem sucedido!")
+    except Exception as e:
+        print(f"Erro para fazer upload para o S3: {e}")
+    dia_antes = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     time.sleep(5)
