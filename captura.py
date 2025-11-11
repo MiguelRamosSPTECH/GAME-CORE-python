@@ -34,7 +34,6 @@ def captura_processos():
     global dados_processos_direto
     for proc in psutil.process_iter():
         proc.cpu_percent(interval=None)
-
         pid_proc = proc.pid
         nome_proc = proc.name()
         status_proc = proc.status()
@@ -79,7 +78,6 @@ def captura_processos():
 
 
 
-
     top10_cpu1 = df_proc.sort_values(by="cpu_porcentagem", ascending=False).head(10)
 
 
@@ -92,7 +90,7 @@ def gerencia_containers(acao):
     porta_container = 25565
     identificacao_container = 1
     identificacao_volume = 1
-
+    
     for loop in range(0,3):
         container = None
         volume = None
