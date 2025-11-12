@@ -27,38 +27,41 @@ def to_mb(x):
 def to_gb(x):
     return x / (1024**3)
 
-
-
-
 def captura_processos():
     global dados_processos_direto
     for proc in psutil.process_iter():
-        proc.cpu_percent(interval=None)
-        pid_proc = proc.pid
-        nome_proc = proc.name()
-        status_proc = proc.status()
-        cpu_uso_proc = proc.cpu_percent()
-        ram_uso_proc = [proc.memory_percent(), round(to_mb(proc.memory_info().rss),2), round(to_gb(proc.memory_info().rss),2)]
-        total_threads = proc.num_threads()
-        ppid = proc.ppid()
-        tempo_execucao_proc = proc.create_time()
-        icp1 = proc.io_counters()
-        icp2 = proc.io_counters()
-        calcula_throughput = ((icp2.read_bytes - icp1.read_bytes) + (icp2.write_bytes - icp1.write_bytes)) / intervalo_monitoramento
-        proc_throughput = [round(to_mb(calcula_throughput),2), round(to_gb(calcula_throughput),2)]
-        
-        dados_processos_direto['timestamp'].append(timestamp)
-        dados_processos_direto['pid'].append(pid_proc)
-        dados_processos_direto['ppid'].append(ppid)
-        dados_processos_direto['nome_processo'].append(nome_proc)
-        dados_processos_direto['status'].append(status_proc)
-        dados_processos_direto['cpu_porcentagem'].append(cpu_uso_proc)
-        dados_processos_direto['ram_porcentagem'].append(ram_uso_proc[0])
-        dados_processos_direto['total_threads'].append(total_threads)
-        dados_processos_direto['tempo_execucao'].append(tempo_execucao_proc)
-        dados_processos_direto['throughput_mbs'].append(proc_throughput[0])
-        dados_processos_direto['throughput_gbs'].append(proc_throughput[1])
-        
+
+        if os.name.lower() == 'posix':
+            try:
+                proc.cpu_percent(interval=None)
+                pid_proc = proc.pid
+                nome_proc = proc.name()
+                status_proc = proc.status()
+                cpu_uso_proc = proc.cpu_percent()
+                ram_uso_proc = [proc.memory_percent(), round(to_mb(proc.memory_info().rss),2), round(to_gb(proc.memory_info().rss),2)]
+                total_threads = proc.num_threads()
+                ppid = proc.ppid()
+                tempo_execucao_proc = proc.create_time()
+                icp1 = proc.io_counters()
+                icp2 = proc.io_counters()
+                calcula_throughput = ((icp2.read_bytes - icp1.read_bytes) + (icp2.write_bytes - icp1.write_bytes)) / intervalo_monitoramento
+                proc_throughput = [round(to_mb(calcula_throughput),2), round(to_gb(calcula_throughput),2)]
+                
+                dados_processos_direto['timestamp'].append(timestamp)
+                dados_processos_direto['pid'].append(pid_proc)
+                dados_processos_direto['ppid'].append(ppid)
+                dados_processos_direto['nome_processo'].append(nome_proc)
+                dados_processos_direto['status'].append(status_proc)
+                dados_processos_direto['cpu_porcentagem'].append(cpu_uso_proc)
+                dados_processos_direto['ram_porcentagem'].append(ram_uso_proc[0])
+                dados_processos_direto['total_threads'].append(total_threads)
+                dados_processos_direto['tempo_execucao'].append(tempo_execucao_proc)
+                dados_processos_direto['throughput_mbs'].append(proc_throughput[0])
+                dados_processos_direto['throughput_gbs'].append(proc_throughput[1])
+            except psutil.NoSuchProcess:
+                continue
+            except psutil.AccessDenied:
+                continue
         
     
     df_proc = pd.DataFrame(dados_processos_direto)
@@ -210,28 +213,41 @@ def dados_container(name):
 intervalo_monitoramento = 0.5
 # gerencia_containers("excluir")
 # gerencia_containers("criar")
+
 while True: 
-    
+
+    try: 
+        #limpar csv quando virar o dia
+        csv_leu = pd.read_csv('dados_capturados.csv', sep=";")
+        # print(csv_leu.tail(1)['timestamp'].iloc[0])
+        dia = csv_leu.tail(1)['timestamp'].iloc[0].split(" ")[0]
+        diretorio_do_script = os.path.dirname(os.path.abspath(__file__))
+
+        if(dia != csv_leu.tail(2)['timestamp'].iloc[0].split(" ")[0]):
+            caminho_busca = os.path.join(diretorio_do_script, "*.csv") #caminho absoluto de qualquer arquivo que termine com .csv
+            arquivos_csv = glob.glob(caminho_busca) #pega e transforma em uma lista 
+            print(arquivos_csv)
+            for arquivo in arquivos_csv:
+                try:
+                    with open(arquivo, "w", encoding="utf-8") as f:
+                        pass
+                except IOError as e:
+                    print(f"Erro ao limpar o(s) arquivo(s): {e}")
+                print("Processo de limpeza de arquivos CSV concluído.")
+        
+    except:
+        pass
+
+
+    #mais para o linux tlgd        
+    try:
+        macadress = psutil.net_if_addrs()['Wi-fi'][0].address 
+    except KeyError:
+        macadress = psutil.net_if_addrs()['wlx3460f9555171'][len(psutil.net_if_addrs()['wlx3460f9555171'])-1].address #linux (eukkkkk)
+
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     timestamp_arquivos = timestamp.split(" ")[1][0:len(timestamp.split(" ")[1])-3]
-
-    # LIMPAR CSV PARA NOVO DIA
-    dia_antes = None
-    caminho_busca = os.path.join("/", "*.csv") #caminho absoluto de qualquer arquivo que termine com .csv
-    arquivos_csv = glob.glob(caminho_busca) #pega e transforma em uma lista 
-
-    if (dia_antes != None) and (timestamp.split(" ")[0] != dia_antes):
-        for arquivo in arquivos_csv:
-            try:
-                with open(arquivo, "w", encoding="utf-8") as f:
-                    pass
-            except IOError as e:
-                print(f"Erro ao limpar o(s) arquivo(s): {e}")
-            print("Processo de limpeza de arquivos CSV concluído.")
-
-
-    macadress = psutil.net_if_addrs()['Wi-Fi'][0].address
-
     #---------------------------------------------------------------------------------------
     #USO DA CPU DE FORMA GERAL (% e em segundos)
     cpu_porcentagem_geral = psutil.cpu_times_percent(interval=intervalo_monitoramento, percpu=False)
@@ -351,6 +367,7 @@ while True:
     df = pd.DataFrame(dados)
     arquivo = "dados_capturados.csv"
     df.to_csv(arquivo, encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo), sep=";")
+
     try:
         data_formatada = timestamp.replace(" ", "-")
         s3_client.upload_file(arquivo, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo}")
