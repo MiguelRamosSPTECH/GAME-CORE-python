@@ -8,7 +8,7 @@ from datetime import datetime
 import time
 import boto3
 import glob
-import asyncio
+import random
 #-----------------------------------------------------------
 #AREA CONEXAO COM BUCKETS AWS
 nome_bucket = "bucket-raw-gamecore"
@@ -16,6 +16,7 @@ regiao_bucket = "us-east-1"
 
 #iniciar ambiente s3
 s3_client = boto3.client('s3', region_name=regiao_bucket)
+
 #------------------------------------------------------------
 RAM_LIMITE = "512m"
 CPU_LIMITE = "1"
@@ -27,6 +28,9 @@ def to_mb(x):
 
 def to_gb(x):
     return x / (1024**3)
+
+
+# --------------------- GERENCIAMENTO DE DADOS DOS PROCESSOS ----------------- #
 
 def inicializa_dados_processos():
     global dados_processos_direto
@@ -83,6 +87,9 @@ def captura_processos(intervalo_decorrido):
                 dados_processos_direto['throughput_mbs'].append(proc_throughput[0])
                 dados_processos_direto['throughput_gbs'].append(proc_throughput[1])
 
+                io_anterior[pid_proc]["read_bytes"] = icp.read_bytes
+                io_anterior[pid_proc]["write_bytes"] = icp.write_bytes
+
             except psutil.NoSuchProcess:
                 continue
             except psutil.AccessDenied:
@@ -105,7 +112,8 @@ def captura_processos(intervalo_decorrido):
 
 
 
-#PARTE DE MANIPULAÇÃO DOS CONTAINERS
+# --------------------- GERENCIAMENTO DE DADOS DOS CONTAINERS ----------------- #
+
 def gerencia_containers(acao):
     lista_containers = client.containers.list()
     porta_container = 25565
@@ -135,7 +143,7 @@ def gerencia_containers(acao):
                 print(f"Erro: O volume 'mc-data-{identificacao_container}' não foi encontrado.")
                 continue
         elif acao == "criar" and len(lista_containers) < 3:            
-            client.containers.run(
+            container_criado = client.containers.run(
                 "itzg/minecraft-server", #imagem
                 name=f"mc-server-{identificacao_container}",
                 detach=True, #-d
@@ -146,9 +154,19 @@ def gerencia_containers(acao):
                 volumes={f'mc-data-{identificacao_container}': {'bind':'/data','mode':'rw'}} #colocar na pasta data tudo do mundo e posso escrever e ler dados
             )
             print(f"CONTAINER {loop+1} CRIADO COM SUCESSO!")
+            time.sleep(5)
+            try:
+                container_criado.exec_run(['apt-get', 'update'], detach=False)
+                container_criado.exec_run(['apt-get', 'install', '-y', 'stress-ng'], detach=False)
+                print(f"[SETUP] stress-ng instalado com sucesso em {container_criado.name}.")
+            except Exception as e:
+                 print(f"[WARN] Falha ao instalar stress-ng em {container_criado.name}. Verifique se o container iniciou corretamente. Erro: {e}")
+
+
             identificacao_container= identificacao_container+1
             porta_container=porta_container+1
             identificacao_volume=identificacao_volume+1
+
 
 
 
@@ -161,6 +179,7 @@ dados_anteriores = {
 }
 
 def dados_container(name):
+    global num_cpus, dados_anteriores
     #zerar valores men
     dados_anteriores['read_bytes'] = None
     dados_anteriores['write_bytes'] = None
@@ -168,6 +187,26 @@ def dados_container(name):
     dados_anteriores['system_cpu_usage'] = None
 
     container_monitora = client.containers.get(name)
+
+    tipo_ativo = stress_status[name]
+    if tipo_ativo != "None":
+        print(f"[ENDING... ] Estresse de {tipo_ativo} encerrado e ambiente limpo.")
+        # PARANDO ESTRESSE ANTERIOR
+        if tipo_ativo == "CPU":
+            container_monitora.exec_run('pkill yes') # Mata o processo yes
+        elif tipo_ativo == "RAM":
+            container_monitora.exec_run('pkill stress-ng') # Mata o processo stress
+        elif tipo_ativo == "IO":
+            container_monitora.exec_run('rm /tmp/bigfile') # Remove o arquivo criado
+        stress_status[name] = "None"
+        time.sleep(3) #dar um tempo p limpar tudo
+
+    #FORÇAR ALGUM CONTAINER
+    vaiForcar = random.randint(1,3)
+    if vaiForcar == 2 and stress_status[name] == "None": 
+        novo_tipo = forca_container(container_monitora)
+        stress_status[name] = novo_tipo
+        time.sleep(1)
 
 
     container_monitora.exec_run(['mkdir','-p','/arquivos_descompactados/']) #cria diretório para gravar o arquivo descompactado
@@ -196,6 +235,8 @@ def dados_container(name):
     #pega valor minimo entre tps_real e 20.0 (maximo) e dps arredonda para 2 (tendo os ticks por segundo)
     tps_container = round(min(1000000000 / (soma_ticktime / (len(saida_bytes.decode('utf-8').split('\n')) - 2)), 20.0),2)
 
+    #FORÇANDO COMPONENTES DO CONTAINER
+
     for dados_container in container_monitora.stats(stream=True): #retorna dados em bytes
         dados_formata = json.loads(dados_container.decode('utf-8')) #le no formato br e transforma em json para poder acessar os dados
         soma_read_bytes = 0
@@ -219,12 +260,35 @@ def dados_container(name):
 
             cpu_uso_docker = 0.0
             if system_total_delta > 0:
-                cpu_uso_docker = round((cpu_total_delta / system_total_delta) * 1 * 100, 2)
+                cpu_uso_docker = round((cpu_total_delta / system_total_delta) * num_cpus * 100, 2)
             
             throughput_container = round(to_mb(((soma_read_bytes - dados_anteriores['read_bytes']) + (soma_write_bytes - dados_anteriores['write_bytes'])) / intervalo_monitoramento),2)
             ram_uso = round(((dados_formata['memory_stats']['usage'] / dados_formata['memory_stats']['limit']) * 100),2)
             throttled_time = (dados_formata['cpu_stats']['throttling_data']['throttled_time'] / 1000000000) / 60
             return [cpu_uso_docker, throughput_container, ram_uso, throttled_time, tps_container]
+
+
+
+def forca_container(container_escolhido):
+
+    tipo_estresse = {
+        "CPU": 'sh -c "yes > /dev/null &"',
+        "RAM": 'stress-ng --vm 2 --vm-bytes 50M --timeout 3s',
+        "IO": 'dd if=/dev/zero of=/tmp/bigfile bs=1M count=200 oflag=dsync'
+    }
+    
+    tipo_escolhido, comando_start = random.choice(list(tipo_estresse.items()))
+
+    print(f"[TESTING... ] Iniciando estresse de {tipo_escolhido} em {container_escolhido.name}")
+    
+    # 1. Inicia o comando
+    container_escolhido.exec_run(comando_start, detach=True) 
+
+    return tipo_escolhido
+
+      
+
+# --------------------- LIMPAR DADOS DO CSV ----------------- #
 
 def limpa_csvs():
     try: 
@@ -250,10 +314,16 @@ def limpa_csvs():
     except Exception as e:
         print(f"[❌ ERROR] Erro na checagem de mudança de dia!!! {e}")
 
+# --------------------- PARTE DE CAPTURA E SALVAMENTO DOS DADOS ----------------- #
 
 intervalo_monitoramento = 0.5
 # gerencia_containers("excluir")
 # gerencia_containers("criar")
+stress_status = {
+    "mc-server-1": "None",
+    "mc-server-2": "None",
+    "mc-server-3": "None"
+}
 
 #---- LÓGICA THROUGHPUT (HOST E PROCESSOS) -----#
 
@@ -268,11 +338,11 @@ io_anterior = {}
 # ----- LÓGICA PARA PEGAR USO DE CPU DOS PROCESSOS MEN ---- #
 num_cpus = psutil.cpu_count(logical=True)
 
+inicializa_dados_processos()
 
 while True: 
 
     limpa_csvs() 
-    inicializa_dados_processos()
 
     # ----- MACADRESS PARA LINUX E WINDOWS ----- #       
      
@@ -342,6 +412,8 @@ while True:
     bytes_recebidos = to_mb(rede_io_counters.bytes_recv)
 
     #------------------------------ DADOS DOS CONTAINERS --------------------------------------- #
+
+
     df_container = {
         "identificacao_container":[],
         "timestamp":[],
@@ -419,14 +491,14 @@ while True:
     arquivo = "dados_capturados.csv"
     df.to_csv(arquivo, encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo), sep=";")
 
-    # try:
-    #     data_formatada = timestamp.replace(" ", "-")
-    #     s3_client.upload_file(arquivo, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo}")
-    #     s3_client.upload_file(arquivo_c, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo_c}")
-    #     s3_client.upload_file("dados_processos_cpu.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos_cpu.csv")
-    #     s3_client.upload_file("dados_processos.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos.csv")
-    #     print(f"✅ [{data_formatada}] - UPLOAD DOS CSV'S no BUCKET RAW bem sucedido!")
-    # except Exception as e:
-    #     print(f"Erro para fazer upload para o S3: {e}")
+    try:
+        data_formatada = timestamp.replace(" ", "-")
+        s3_client.upload_file(arquivo, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo}")
+        s3_client.upload_file(arquivo_c, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo_c}")
+        s3_client.upload_file("dados_processos_cpu.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos_cpu.csv")
+        s3_client.upload_file("dados_processos.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos.csv")
+        print(f"✅ [{data_formatada}] - UPLOAD DOS CSV'S no BUCKET RAW bem sucedido!")
+    except Exception as e:
+        print(f"Erro para fazer upload para o S3: {e}")
 
-    time.sleep(5)
+    time.sleep(7)
