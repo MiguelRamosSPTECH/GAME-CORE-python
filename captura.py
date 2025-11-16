@@ -8,6 +8,7 @@ from datetime import datetime
 import time
 import boto3
 import glob
+import asyncio
 #-----------------------------------------------------------
 #AREA CONEXAO COM BUCKETS AWS
 nome_bucket = "bucket-raw-gamecore"
@@ -27,24 +28,47 @@ def to_mb(x):
 def to_gb(x):
     return x / (1024**3)
 
-def captura_processos():
+def inicializa_dados_processos():
     global dados_processos_direto
-    for proc in psutil.process_iter():
+    global io_anterior
+    
+    io_anterior = {}
 
-        if os.name.lower() == 'posix':
+    for proc in psutil.process_iter():
+        try:
+            proc.cpu_percent(interval=None)
+            io_anterior[proc.pid] = {
+                "read_bytes": proc.io_counters().read_bytes,
+                "write_bytes": proc.io_counters().write_bytes
+            }
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+def captura_processos(intervalo_decorrido):
+    global dados_processos_direto, io_anterior, num_cpus
+
+    #nao ir pelo processo dele, mas por todos, pq se nao pode dar um numero mto grande de (uso x processo pai)
+    tempo_total_cpu = intervalo_decorrido * num_cpus
+
+    for proc in psutil.process_iter():
+            
+            #evitar comparar com algum processo que surgiu do nada no intervalo entre inicializar e capturar
+            if proc.pid not in io_anterior:
+                continue
+
             try:
-                proc.cpu_percent(interval=None)
+                cpu_percent = proc.cpu_percent(interval=None)
+
                 pid_proc = proc.pid
                 nome_proc = proc.name()
                 status_proc = proc.status()
-                cpu_uso_proc = proc.cpu_percent()
+                cpu_uso_proc = round((cpu_percent / num_cpus) ,2)
                 ram_uso_proc = [proc.memory_percent(), round(to_mb(proc.memory_info().rss),2), round(to_gb(proc.memory_info().rss),2)]
                 total_threads = proc.num_threads()
                 ppid = proc.ppid()
                 tempo_execucao_proc = proc.create_time()
-                icp1 = proc.io_counters()
-                icp2 = proc.io_counters()
-                calcula_throughput = ((icp2.read_bytes - icp1.read_bytes) + (icp2.write_bytes - icp1.write_bytes)) / intervalo_monitoramento
+                icp = proc.io_counters()
+                calcula_throughput = ((icp.read_bytes - io_anterior[pid_proc]["read_bytes"]) + (icp.write_bytes - io_anterior[pid_proc]["write_bytes"])) / intervalo_decorrido
                 proc_throughput = [round(to_mb(calcula_throughput),2), round(to_gb(calcula_throughput),2)]
                 
                 dados_processos_direto['timestamp'].append(timestamp)
@@ -58,6 +82,7 @@ def captura_processos():
                 dados_processos_direto['tempo_execucao'].append(tempo_execucao_proc)
                 dados_processos_direto['throughput_mbs'].append(proc_throughput[0])
                 dados_processos_direto['throughput_gbs'].append(proc_throughput[1])
+
             except psutil.NoSuchProcess:
                 continue
             except psutil.AccessDenied:
@@ -65,26 +90,19 @@ def captura_processos():
         
     
     df_proc = pd.DataFrame(dados_processos_direto)
-    top10_cpu = df_proc.sort_values(by="cpu_porcentagem", ascending=False).head(50)
-    top10_ram = df_proc.sort_values(by="ram_porcentagem", ascending=False).head(50)
-    top10_disco = df_proc.sort_values(by="throughput_mbs", ascending=False).head(50)
+    top10_cpu = df_proc.sort_values(by="cpu_porcentagem", ascending=False).head(10)
+    top10_ram = df_proc.sort_values(by="ram_porcentagem", ascending=False).head(10)
+    top10_disco = df_proc.sort_values(by="throughput_mbs", ascending=False).head(10)
 
-    top10_geral1 = pd.merge(top10_cpu, top10_ram, on=["pid", "nome_processo"], how="inner")
+    top_listas = [top10_cpu, top10_ram, top10_disco]
 
-    top10_geral2 = pd.merge(top10_geral1, top10_disco, on=["pid", "nome_processo"], how="inner")
+    #junta tudo, exclui processos duplicados e re-organiza ordem (1,2,3,4,5....)
+    junta_listas = pd.concat(top_listas).drop_duplicates().reset_index(drop=True)
 
+    arquivo_proc = "dados_processos.csv"        
 
+    junta_listas.to_csv(arquivo_proc, encoding="utf-8", index=False, mode="a", header=not os.path.exists(f"{arquivo_proc}"), sep=";")
 
-    arquivo_proc = "dados_processos.csv"
-
-    top10_geral2.to_csv(arquivo_proc, encoding="utf-8", index=False, mode="a", header=not os.path.exists(f"{arquivo_proc}"), sep=";")
-
-
-
-    top10_cpu1 = df_proc.sort_values(by="cpu_porcentagem", ascending=False).head(10)
-
-
-    top10_cpu1.to_csv("dados_processos_cpu.csv", encoding="utf-8", index=False, mode="a", header=not os.path.exists("dados_processos_cpu.csv"), sep=";")
 
 
 #PARTE DE MANIPULAÇÃO DOS CONTAINERS
@@ -122,7 +140,7 @@ def gerencia_containers(acao):
                 name=f"mc-server-{identificacao_container}",
                 detach=True, #-d
                 ports = {f'25565/tcp' : porta_container},
-                environment=['EULA=TRUE', 'TZ=America/Sao_Paulo', 'FORCE_IPV4=true'],
+                environment=['EULA=TRUE', 'TZ=America/Sao_Paulo', 'FORCE_IPV4=true', 'MEMORY=500M'],
                 mem_limit=RAM_LIMITE,
                 cpuset_cpus=CPU_LIMITE,
                 volumes={f'mc-data-{identificacao_container}': {'bind':'/data','mode':'rw'}} #colocar na pasta data tudo do mundo e posso escrever e ler dados
@@ -208,64 +226,90 @@ def dados_container(name):
             throttled_time = (dados_formata['cpu_stats']['throttling_data']['throttled_time'] / 1000000000) / 60
             return [cpu_uso_docker, throughput_container, ram_uso, throttled_time, tps_container]
 
+def limpa_csvs():
+    try: 
+        #limpar csv quando virar o dia
+        csv_leu = pd.read_csv('dados_capturados.csv', sep=";")
+        dia = datetime.now().strftime("%Y-%m-%d")
+        diretorio_do_script = os.path.dirname(os.path.abspath(__file__))
+        
+        if(dia != csv_leu.tail(1)['timestamp'].iloc[0].split(" ")[0]):
+            caminho_busca = os.path.join(diretorio_do_script, "*.csv") #caminho absoluto de qualquer arquivo que termine com .csv
+            arquivos_csv = glob.glob(caminho_busca) #pega e transforma em uma lista 
+            for arquivo in arquivos_csv:
+                try:
+                    df_header = pd.read_csv(arquivo, sep=";", nrows=0) #ler apenas o cabeçalho
+                    df_header.to_csv(arquivo, index=False, mode='w', header=True, sep=";")
+                except IOError as e:
+                    print(f"Erro ao limpar o(s) arquivo(s): {e}")
+            print("Processo de limpeza de arquivos CSV concluído.")
+    except pd.errors.EmptyDataError:
+        pass
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"[❌ ERROR] Erro na checagem de mudança de dia!!! {e}")
 
 
 intervalo_monitoramento = 0.5
 # gerencia_containers("excluir")
 # gerencia_containers("criar")
 
+#---- LÓGICA THROUGHPUT (HOST E PROCESSOS) -----#
+
+#logica para pegar throughput entre um monitoramento e outro
+timestamp_anterior = time.time()
+disco_io_anterior = psutil.disk_io_counters()
+
+#esquema throught processos
+io_anterior = {}
+
+
+# ----- LÓGICA PARA PEGAR USO DE CPU DOS PROCESSOS MEN ---- #
+num_cpus = psutil.cpu_count(logical=True)
+
+
 while True: 
 
-    try: 
-        #limpar csv quando virar o dia
-        csv_leu = pd.read_csv('dados_capturados.csv', sep=";")
-        # print(csv_leu.tail(1)['timestamp'].iloc[0])
-        dia = csv_leu.tail(1)['timestamp'].iloc[0].split(" ")[0]
-        diretorio_do_script = os.path.dirname(os.path.abspath(__file__))
+    limpa_csvs() 
+    inicializa_dados_processos()
 
-        if(dia != csv_leu.tail(2)['timestamp'].iloc[0].split(" ")[0]):
-            caminho_busca = os.path.join(diretorio_do_script, "*.csv") #caminho absoluto de qualquer arquivo que termine com .csv
-            arquivos_csv = glob.glob(caminho_busca) #pega e transforma em uma lista 
-            print(arquivos_csv)
-            for arquivo in arquivos_csv:
-                try:
-                    with open(arquivo, "w", encoding="utf-8") as f:
-                        pass
-                except IOError as e:
-                    print(f"Erro ao limpar o(s) arquivo(s): {e}")
-                print("Processo de limpeza de arquivos CSV concluído.")
-        
-    except:
-        pass
-
-
-    #mais para o linux tlgd        
-    try:
+    # ----- MACADRESS PARA LINUX E WINDOWS ----- #       
+     
+    try: #Windows
         macadress = psutil.net_if_addrs()['Wi-fi'][0].address 
-    except KeyError:
+    except KeyError: #Linux
         macadress = psutil.net_if_addrs()['wlx3460f9555171'][len(psutil.net_if_addrs()['wlx3460f9555171'])-1].address #linux (eukkkkk)
 
 
+    # --------- QUESTÃO DE INTERVALOS DE TEMPO + TIMESTAMP --------- #
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # timestamp = "2025-11-15 12:00:00"
     timestamp_arquivos = timestamp.split(" ")[1][0:len(timestamp.split(" ")[1])-3]
-    #---------------------------------------------------------------------------------------
+
+    #pega intervalo de tempo desde o começo do monitoramento até agr
+    timestamp_atual = time.time()
+    intervalo_decorrido = timestamp_atual - timestamp_anterior
+
+    #------------------------------ DADOS DA CPU --------------------------------------- #
+
     #USO DA CPU DE FORMA GERAL (% e em segundos)
-    cpu_porcentagem_geral = psutil.cpu_times_percent(interval=intervalo_monitoramento, percpu=False)
-    cpu_uso = [round(100 - cpu_porcentagem_geral.idle,2), round((((100 - cpu_porcentagem_geral.idle)/100) * intervalo_monitoramento),2)]
+    cpu_porcentagem_geral = psutil.cpu_times_percent(interval=None, percpu=False)
+    cpu_uso = [round(100 - cpu_porcentagem_geral.idle,2), round((((100 - cpu_porcentagem_geral.idle)/100) * intervalo_decorrido),2)]
 
     #USO DA CPU DE FORMA DETALHADA (% e em segundos)
-    cpu_idle = [cpu_porcentagem_geral.idle, round((cpu_porcentagem_geral.idle / 100) * intervalo_monitoramento,2)]
+    cpu_idle = [cpu_porcentagem_geral.idle, round((cpu_porcentagem_geral.idle / 100) * intervalo_decorrido,2)]
 
-    cpu_user = [cpu_porcentagem_geral.user, round((cpu_porcentagem_geral.user / 100) * intervalo_monitoramento,2)]
+    cpu_user = [cpu_porcentagem_geral.user, round((cpu_porcentagem_geral.user / 100) * intervalo_decorrido,2)]
 
-    cpu_system = [cpu_porcentagem_geral.system, round((cpu_porcentagem_geral.system / 100) * intervalo_monitoramento,2)]
+    cpu_system = [cpu_porcentagem_geral.system, round((cpu_porcentagem_geral.system / 100) * intervalo_decorrido,2)]
     
     #PROCESSOS ATIVOS + EM FILA (LOADAVG)
     cpu_loadavg = psutil.getloadavg() #ultimos 1, 5 e 15 minutos
 
-    #---------------------------------------------------------------------------------------
+    #------------------------------ DADOS DA RAM ----------------------------------- #
 
-    #RAM
     ram_uso_geral = psutil.virtual_memory()
     ram_swap_geral = psutil.swap_memory()
 
@@ -275,26 +319,29 @@ while True:
 
     ram_swap = [ round(ram_swap_geral.percent,2), round(to_mb(ram_swap_geral.used),2), round(to_gb(ram_swap_geral.used),2)  ]
     
-    #---------------------------------------------------------------------------------------
+    #------------------------------ DADOS DO DISCO --------------------------------- #
 
-    #DISCO
     disco_uso_geral = psutil.disk_usage('/')
 
     disco_io = psutil.disk_io_counters()
-    time.sleep(intervalo_monitoramento)
-    disco_io2 = psutil.disk_io_counters()
-    calcula_throughput = (((disco_io2.read_bytes - disco_io.read_bytes) + (disco_io2.write_bytes - disco_io.write_bytes))/ intervalo_monitoramento)
+
+    calcula_throughput = (((disco_io.read_bytes - disco_io_anterior.read_bytes) + (disco_io.write_bytes - disco_io_anterior.write_bytes))/ intervalo_decorrido)
 
     disco_uso = [disco_uso_geral.percent, round(to_mb(disco_uso_geral.used),2), round(to_gb(disco_uso_geral.used),2)]
     disco_livre = [round((disco_uso_geral.free/disco_uso_geral.total) * 100,2), round(to_mb(disco_uso_geral.free),2), round(to_gb(disco_uso_geral.free),2)]
     disco_throughput = [round(to_mb(calcula_throughput),2), round(to_gb(calcula_throughput),2)]
+    
+    #Atualiza status das variáveis para pegar o dado exato entre um monitoramento e outro
+    disco_io_anterior = disco_io
+    timestamp_anterior = timestamp_atual
 
-    #REDE
+    #------------------------------ DADOS DA REDE --------------------------------------- #
 
     rede_io_counters = psutil.net_io_counters()
     bytes_enviados = to_mb(rede_io_counters.bytes_sent)
     bytes_recebidos = to_mb(rede_io_counters.bytes_recv)
-    #----------------------------------------------------------------------------------------
+
+    #------------------------------ DADOS DOS CONTAINERS --------------------------------------- #
     df_container = {
         "identificacao_container":[],
         "timestamp":[],
@@ -315,7 +362,7 @@ while True:
         df_container['throttled_time_container'].append(dcm[3])
         df_container['tps_container'].append(dcm[4])
 
-    #PROCESSOS
+    # ------------------------------ DADOS DOS PROCESSOS  ------------------------------------- #
     dados_processos_direto = {
         'timestamp': [],
         'pid': [],
@@ -329,7 +376,9 @@ while True:
         'throughput_mbs': [],
         'throughput_gbs': []
     }
-    captura_processos()
+    captura_processos(intervalo_decorrido)
+
+    #------------------------------ DADOS DO HOST ------------------------------------- #
     dados = {
         "macadress": [macadress],
         "timestamp": [timestamp],
@@ -358,6 +407,8 @@ while True:
         "rede_enviados_mb_":[bytes_enviados],
         "rede_recebidos_mb":[bytes_recebidos]
     }
+
+    # ------------------------------ JOGAR EM CSV ----------------------------------- #
     #CONTAINER
     df_c = pd.DataFrame(df_container)
     arquivo_c = "dados_containers.csv"
@@ -368,14 +419,14 @@ while True:
     arquivo = "dados_capturados.csv"
     df.to_csv(arquivo, encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo), sep=";")
 
-    try:
-        data_formatada = timestamp.replace(" ", "-")
-        s3_client.upload_file(arquivo, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo}")
-        s3_client.upload_file(arquivo_c, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo_c}")
-        s3_client.upload_file("dados_processos_cpu.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos_cpu.csv")
-        s3_client.upload_file("dados_processos.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos.csv")
-        print(f"✅ [{data_formatada}] - UPLOAD DOS CSV'S no BUCKET RAW bem sucedido!")
-    except Exception as e:
-        print(f"Erro para fazer upload para o S3: {e}")
-    dia_antes = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # try:
+    #     data_formatada = timestamp.replace(" ", "-")
+    #     s3_client.upload_file(arquivo, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo}")
+    #     s3_client.upload_file(arquivo_c, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo_c}")
+    #     s3_client.upload_file("dados_processos_cpu.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos_cpu.csv")
+    #     s3_client.upload_file("dados_processos.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos.csv")
+    #     print(f"✅ [{data_formatada}] - UPLOAD DOS CSV'S no BUCKET RAW bem sucedido!")
+    # except Exception as e:
+    #     print(f"Erro para fazer upload para o S3: {e}")
+
     time.sleep(5)
