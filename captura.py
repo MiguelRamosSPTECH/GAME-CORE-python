@@ -9,6 +9,7 @@ import time
 import boto3
 import glob
 import random
+
 #-----------------------------------------------------------
 #AREA CONEXAO COM BUCKETS AWS
 nome_bucket = "bucket-raw-gamecore"
@@ -28,6 +29,48 @@ def to_mb(x):
 
 def to_gb(x):
     return x / (1024**3)
+
+# ------------------------- SIMULAÇÃO DE TEMPERATURA ----------------------- #
+
+def simula_temperatura_gargalo(cpu_percent, disco_throughput_mbs):
+    global dados
+    """
+    Gera uma temperatura simulada correlacionada com a CPU,
+    e aumenta o risco de 'estouro' com base na simulação de gargalo (throttling).
+    """
+    temp_base = 0.0
+    gargalo_simulado = 0.0
+
+    # 1. Definir a Temperatura Base pelo Uso da CPU
+    if cpu_percent <= 10:
+        # Idle (35C a 45C)
+        temp_base = random.uniform(35.0, 45.0)
+    elif cpu_percent <= 50:
+        # Carga Média (45C a 65C)
+        temp_base = random.uniform(45.0, 65.0)
+    else:
+        # Carga Alta (65C a 80C) - Limite para ter margem de 'estouro'
+        temp_base = random.uniform(65.0, 80.0)
+
+    # 2. Aplicar Fator de Gargalo/Estouro
+    
+    # Se a CPU está muito alta (> 80%) OU a RAM está muito alta (> 90%)
+    if cpu_percent > 80:
+        # Simula o efeito de 'Thermal Throttling'
+        # Aumenta a temperatura drasticamente para simular falha de refrigeração sob estresse máximo.
+        gargalo_simulado = random.uniform(8.0, 15.0) # Adiciona 8C a 15C
+        
+    # Se houver atividade de disco muito intensa (> 50 MB/s), também pode gerar calor extra.
+    elif disco_throughput_mbs > 50.0 and cpu_percent > 30:
+        # Adiciona um aumento menor por estresse de I/O
+        gargalo_simulado = random.uniform(2.0, 5.0) 
+
+    temperatura_final = temp_base + gargalo_simulado
+    
+    # Garante que a temperatura não passe de um limite absoluto (e.g., 95C ou 100C)
+    dados['temperatura_cpu'].append(round(min(temperatura_final, 95.0), 2))
+
+
 
 
 # --------------------- GERENCIAMENTO DE DADOS DOS PROCESSOS ----------------- #
@@ -411,6 +454,7 @@ while True:
     bytes_enviados = to_mb(rede_io_counters.bytes_sent)
     bytes_recebidos = to_mb(rede_io_counters.bytes_recv)
 
+
     #------------------------------ DADOS DOS CONTAINERS --------------------------------------- #
 
 
@@ -477,8 +521,10 @@ while True:
         "disco_throughput_mbs":[disco_throughput[0]],
         "disco_throughput_gbs":[disco_throughput[1]],
         "rede_enviados_mb_":[bytes_enviados],
-        "rede_recebidos_mb":[bytes_recebidos]
+        "rede_recebidos_mb":[bytes_recebidos],
+        "temperatura_cpu": [],
     }
+    simula_temperatura_gargalo(cpu_uso[0], disco_throughput[0])
 
     # ------------------------------ JOGAR EM CSV ----------------------------------- #
     #CONTAINER
@@ -491,14 +537,13 @@ while True:
     arquivo = "dados_capturados.csv"
     df.to_csv(arquivo, encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo), sep=";")
 
-    try:
-        data_formatada = timestamp.replace(" ", "-")
-        s3_client.upload_file(arquivo, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo}")
-        s3_client.upload_file(arquivo_c, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo_c}")
-        s3_client.upload_file("dados_processos_cpu.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos_cpu.csv")
-        s3_client.upload_file("dados_processos.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos.csv")
-        print(f"✅ [{data_formatada}] - UPLOAD DOS CSV'S no BUCKET RAW bem sucedido!")
-    except Exception as e:
-        print(f"Erro para fazer upload para o S3: {e}")
-
+    # try:
+    #     data_formatada = timestamp.replace(" ", "-")
+    #     s3_client.upload_file(arquivo, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo}")
+    #     s3_client.upload_file(arquivo_c, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo_c}")
+    #     s3_client.upload_file("dados_processos_cpu.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos_cpu.csv")
+    #     s3_client.upload_file("dados_processos.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos.csv")
+    #     print(f"✅ [{data_formatada}] - UPLOAD DOS CSV'S no BUCKET RAW bem sucedido!")
+    # except Exception as e:
+    #     print(f"Erro para fazer upload para o S3: {e}")
     time.sleep(7)
