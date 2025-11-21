@@ -410,6 +410,9 @@ while True:
     #USO DA CPU DE FORMA GERAL (% e em segundos)
     cpu_porcentagem_geral = psutil.cpu_times_percent(interval=None, percpu=False)
     cpu_uso = [round(100 - cpu_porcentagem_geral.idle,2), round((((100 - cpu_porcentagem_geral.idle)/100) * intervalo_decorrido),2)]
+    
+    #FREQUENCIA DA CPU (MHZ)
+    cpu_freq = [psutil.cpu_freq().current, psutil.cpu_freq().min, psutil.cpu_freq().max]
 
     #USO DA CPU DE FORMA DETALHADA (% e em segundos)
     cpu_idle = [cpu_porcentagem_geral.idle, round((cpu_porcentagem_geral.idle / 100) * intervalo_decorrido,2)]
@@ -503,6 +506,9 @@ while True:
         "cpu_usuarios_porcentagem":[cpu_user[0]],
         "cpu_sistema_porcentagem":[cpu_system[0]],
         "cpu_loadavg":[cpu_loadavg],
+        "cpu_freq_atual_mhz":[round(cpu_freq[0],2)],
+        "cpu_freq_min_mhz":[round(cpu_freq[1],2)],
+        "cpu_freq_max_mhz":[round(cpu_freq[2],2)],
         "ram_porcentagem":[ram_uso[0]],
         "ram_mb":[ram_uso[1]],
         "ram_gb":[ram_uso[2]],
