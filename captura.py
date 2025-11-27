@@ -498,6 +498,7 @@ while True:
     captura_processos(intervalo_decorrido)
 
     #------------------------------ DADOS DO HOST ------------------------------------- #
+    total_processos_ativos = len(psutil.pids())
     dados = {
         "macadress": [macadress],
         "timestamp": [timestamp],
@@ -529,6 +530,7 @@ while True:
         "rede_enviados_mb_":[bytes_enviados],
         "rede_recebidos_mb":[bytes_recebidos],
         "temperatura_cpu": [],
+        "total_processos_ativos": [total_processos_ativos],
     }
     simula_temperatura_gargalo(cpu_uso[0], disco_throughput[0])
 
