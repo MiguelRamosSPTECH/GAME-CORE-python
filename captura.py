@@ -12,7 +12,7 @@ import random
 
 #-----------------------------------------------------------
 #AREA CONEXAO COM BUCKETS AWS
-nome_bucket = "gp-7-gamecore-bucket-raw"
+nome_bucket = "gamecore-bucket-bucket-bucket-raw"
 regiao_bucket = "us-east-1"
 
 #iniciar ambiente s3
@@ -360,7 +360,7 @@ def limpa_csvs():
 # --------------------- PARTE DE CAPTURA E SALVAMENTO DOS DADOS ----------------- #
 
 intervalo_monitoramento = 0.5
-# gerencia_containers("excluir")
+#gerencia_containers("excluir")
 # gerencia_containers("criar")
 stress_status = {
     "mc-server-1": "None",
@@ -509,7 +509,7 @@ while True:
         "cpu_usuarios_porcentagem":[cpu_user[0]],
         "cpu_sistema_porcentagem":[cpu_system[0]],
         "cpu_loadavg":[cpu_loadavg],
-        "cpu_freq_atual_mhz":[round(cpu_freq[0],2)],
+        "cpu_freq_mhz":[round(cpu_freq[0],2)],
         "cpu_freq_min_mhz":[round(cpu_freq[1],2)],
         "cpu_freq_max_mhz":[round(cpu_freq[2],2)],
         "ram_porcentagem":[ram_uso[0]],
@@ -522,7 +522,6 @@ while True:
         "ram_swap_mb":[ram_swap[1]],
         "ram_swap_gb":[ram_swap[2]],
         "disco_porcentagem":[disco_uso[0]],
-        "disco_mb":[disco_uso[1]],
         "disco_gb":[disco_uso[2]],
         "disco_livre_porcentagem":[disco_livre[0]],
         "disco_livre_mb":[disco_livre[1]],
@@ -547,11 +546,11 @@ while True:
     arquivo = "dados_capturados.csv"
     df.to_csv(arquivo, encoding="utf-8", index=False, mode="a", header=not os.path.exists(arquivo), sep=";")
 
-    # try:
-    #     data_formatada = timestamp.replace(" ", "-")
-    #     s3_client.upload_file(arquivo, nome_bucket, f"{timestamp.split(" ")[0]}/{macadress}/{arquivo}")
-    #     s3_client.upload_file(arquivo_c, nome_bucket, f"{timestamp.split(" ")[0]}/{macadress}/{arquivo_c}")
-    #     s3_client.upload_file("dados_processos.csv", nome_bucket, f"{timestamp.split(" ")[0]}/{macadress}/dados_processos.csv")
-    #     print(f"✅ [{data_formatada}] - UPLOAD DOS CSV'S no BUCKET RAW bem sucedido!")
-    # except Exception as e:
-    #     print(f"Erro para fazer upload para o S3: {e}")
+    try:
+        data_formatada = timestamp.replace(" ", "-")
+        s3_client.upload_file(arquivo, nome_bucket, f"{timestamp.split(" ")[0]}/{macadress}/{arquivo}")
+        s3_client.upload_file(arquivo_c, nome_bucket, f"{timestamp.split(" ")[0]}/{macadress}/{arquivo_c}")
+        s3_client.upload_file("dados_processos.csv", nome_bucket, f"{timestamp.split(" ")[0]}/{macadress}/dados_processos.csv")
+        print(f"✅ [{data_formatada}] - UPLOAD DOS CSV'S no BUCKET RAW bem sucedido!")
+    except Exception as e:
+        print(f"Erro para fazer upload para o S3: {e}")
