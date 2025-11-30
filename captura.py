@@ -12,7 +12,7 @@ import random
 
 #-----------------------------------------------------------
 #AREA CONEXAO COM BUCKETS AWS
-nome_bucket = "bucket-raw-gamecore"
+nome_bucket = "gp-7-gamecore-bucket-raw"
 regiao_bucket = "us-east-1"
 
 #iniciar ambiente s3
@@ -388,11 +388,13 @@ while True:
     limpa_csvs() 
 
     # ----- MACADRESS PARA LINUX E WINDOWS ----- #       
-     
+
     try: #Windows
-        macadress = psutil.net_if_addrs()['Wi-fi'][0].address 
+        macadress = psutil.net_if_addrs()["Wi-fi"][0].address 
+    except KeyError: #Outra parte do windows
+        macadress = psutil.net_if_addrs()["Wi-Fi 2"][0].address 
     except KeyError: #Linux
-        macadress = psutil.net_if_addrs()['wlx3460f9555171'][len(psutil.net_if_addrs()['wlx3460f9555171'])-1].address #linux (eukkkkk)
+        macadress = psutil.net_if_addrs()["wlx3460f9555171"][len(psutil.net_if_addrs()['wlx3460f9555171'])-1].address #linux (eukkkkk)
 
 
     # --------- QUESTÃO DE INTERVALOS DE TEMPO + TIMESTAMP --------- #
@@ -422,7 +424,7 @@ while True:
     cpu_system = [cpu_porcentagem_geral.system, round((cpu_porcentagem_geral.system / 100) * intervalo_decorrido,2)]
     
     #PROCESSOS ATIVOS + EM FILA (LOADAVG)
-    cpu_loadavg = psutil.getloadavg() #ultimos 1, 5 e 15 minutos
+    cpu_loadavg = tuple(round(x, 2) for x in psutil.getloadavg())
 
     #------------------------------ DADOS DA RAM ----------------------------------- #
 
@@ -462,8 +464,8 @@ while True:
 
 
     df_container = {
-        "identificacao_container":[],
         "timestamp":[],
+        "identificacao_container":[],
         "cpu_container":[],
         "throughput_container":[],
         "ram_container":[],
@@ -547,11 +549,9 @@ while True:
 
     # try:
     #     data_formatada = timestamp.replace(" ", "-")
-    #     s3_client.upload_file(arquivo, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo}")
-    #     s3_client.upload_file(arquivo_c, nome_bucket, f"{timestamp.split(" ")[0]}/{arquivo_c}")
-    #     s3_client.upload_file("dados_processos_cpu.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos_cpu.csv")
-    #     s3_client.upload_file("dados_processos.csv", nome_bucket, f"{timestamp.split(" ")[0]}/dados_processos.csv")
+    #     s3_client.upload_file(arquivo, nome_bucket, f"{timestamp.split(" ")[0]}/{macadress}/{arquivo}")
+    #     s3_client.upload_file(arquivo_c, nome_bucket, f"{timestamp.split(" ")[0]}/{macadress}/{arquivo_c}")
+    #     s3_client.upload_file("dados_processos.csv", nome_bucket, f"{timestamp.split(" ")[0]}/{macadress}/dados_processos.csv")
     #     print(f"✅ [{data_formatada}] - UPLOAD DOS CSV'S no BUCKET RAW bem sucedido!")
     # except Exception as e:
     #     print(f"Erro para fazer upload para o S3: {e}")
-    time.sleep(7)
